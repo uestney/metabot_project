@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as http from 'node:http';
+import type * as lark from '@larksuiteoapi/node-sdk';
 import type { Logger } from '../utils/logger.js';
 import type { BotRegistry } from './bot-registry.js';
 import type { TaskScheduler } from '../scheduler/task-scheduler.js';
@@ -17,6 +18,7 @@ interface ApiServerOptions {
   logger: Logger;
   botsConfigPath?: string;
   docSync?: DocSync;
+  feishuServiceClient?: lark.Client;
 }
 
 interface JsonBody {
@@ -66,7 +68,7 @@ async function parseJsonBody(req: http.IncomingMessage): Promise<JsonBody> {
 }
 
 export function startApiServer(options: ApiServerOptions): http.Server {
-  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync } = options;
+  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
 
   const server = http.createServer(async (req, res) => {
@@ -593,22 +595,28 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           return;
         }
 
-        // Find a feishu bot to use
-        const feishuBots = registry.listByPlatform('feishu');
-        if (feishuBots.length === 0) {
-          jsonResponse(res, 400, { error: 'No Feishu bots configured' });
+        // Find a Feishu client to use: specific bot > service client > first bot fallback
+        let clientForDoc: lark.Client | undefined;
+        if (botName) {
+          const bot = registry.getByPlatform(botName, 'feishu');
+          clientForDoc = bot?.feishuClient;
+          if (!clientForDoc) {
+            jsonResponse(res, 404, { error: `Feishu bot not found: ${botName}` });
+            return;
+          }
+        } else {
+          clientForDoc = feishuServiceClient;
+          if (!clientForDoc) {
+            const feishuBots = registry.listByPlatform('feishu');
+            clientForDoc = feishuBots[0]?.feishuClient;
+          }
+        }
+        if (!clientForDoc) {
+          jsonResponse(res, 400, { error: 'No Feishu service app or bots configured' });
           return;
         }
 
-        const bot = botName
-          ? registry.getByPlatform(botName, 'feishu')
-          : feishuBots[0];
-        if (!bot || !bot.feishuClient) {
-          jsonResponse(res, 404, { error: `Feishu bot not found: ${botName}` });
-          return;
-        }
-
-        const reader = new FeishuDocReader(bot.feishuClient, logger);
+        const reader = new FeishuDocReader(clientForDoc, logger);
         let result;
 
         if (docUrl) {

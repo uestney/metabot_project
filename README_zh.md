@@ -162,7 +162,9 @@ npm run dev
 | `MEMORY_SECRET` | `API_SECRET` | MetaMemory 认证（旧版） |
 | `MEMORY_ADMIN_TOKEN` | — | 管理员 Token（完整访问，可见所有文件夹） |
 | `MEMORY_TOKEN` | — | 读者 Token（仅可见 shared 文件夹） |
-| `WIKI_SYNC_ENABLED` | true | 启用 MetaMemory→飞书知识库同步（需配置飞书 Bot） |
+| `FEISHU_SERVICE_APP_ID` | — | 飞书服务应用（用于知识库同步和文档读取，未设置时回退到第一个 Bot） |
+| `FEISHU_SERVICE_APP_SECRET` | — | 飞书服务应用密钥 |
+| `WIKI_SYNC_ENABLED` | true | 启用 MetaMemory→飞书知识库同步 |
 | `WIKI_SPACE_ID` | — | 飞书知识库空间 ID |
 | `WIKI_SPACE_NAME` | MetaMemory | 飞书知识库空间名称 |
 | `WIKI_AUTO_SYNC` | true | MetaMemory 变更时自动同步（带防抖） |

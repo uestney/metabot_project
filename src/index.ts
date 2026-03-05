@@ -150,15 +150,25 @@ async function main() {
     });
   }
 
-  // Initialize wiki sync service (uses first Feishu bot's credentials)
+  // Create a dedicated Feishu service client for wiki sync & doc reader
+  let feishuServiceClient: lark.Client | undefined;
+  if (appConfig.feishuService) {
+    feishuServiceClient = new lark.Client({
+      appId: appConfig.feishuService.appId,
+      appSecret: appConfig.feishuService.appSecret,
+      disableTokenCache: false,
+    });
+    logger.info('Feishu service client initialized (for wiki sync & doc reader)');
+  }
+
+  // Initialize wiki sync service (uses dedicated service app credentials)
   let docSync: DocSync | undefined;
-  if (feishuHandles.length > 0 && process.env.WIKI_SYNC_ENABLED !== 'false') {
-    const firstBot = appConfig.feishuBots[0];
+  if (appConfig.feishuService && process.env.WIKI_SYNC_ENABLED !== 'false') {
     const syncMemoryClient = new MemoryClient(appConfig.memoryServerUrl, logger, appConfig.memory.secret || undefined);
     docSync = new DocSync(
       {
-        feishuAppId: firstBot.feishu.appId,
-        feishuAppSecret: firstBot.feishu.appSecret,
+        feishuAppId: appConfig.feishuService.appId,
+        feishuAppSecret: appConfig.feishuService.appSecret,
         databaseDir: appConfig.memory.databaseDir,
         wikiSpaceName: process.env.WIKI_SPACE_NAME || 'MetaMemory',
         wikiSpaceId: process.env.WIKI_SPACE_ID || undefined,
@@ -195,6 +205,7 @@ async function main() {
     logger,
     botsConfigPath,
     docSync,
+    feishuServiceClient,
   });
 
   // Graceful shutdown

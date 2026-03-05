@@ -162,7 +162,9 @@ Prerequisites: Node.js 20+, [Claude Code CLI](https://github.com/anthropics/clau
 | `MEMORY_SECRET` | `API_SECRET` | MetaMemory auth (legacy) |
 | `MEMORY_ADMIN_TOKEN` | — | Admin token (full access, sees all folders) |
 | `MEMORY_TOKEN` | — | Reader token (shared folders only) |
-| `WIKI_SYNC_ENABLED` | true | Enable MetaMemory→Wiki sync (requires Feishu bot) |
+| `FEISHU_SERVICE_APP_ID` | — | Feishu service app for wiki sync & doc reader (falls back to first bot) |
+| `FEISHU_SERVICE_APP_SECRET` | — | Feishu service app secret |
+| `WIKI_SYNC_ENABLED` | true | Enable MetaMemory→Wiki sync |
 | `WIKI_SPACE_ID` | — | Feishu Wiki space ID |
 | `WIKI_SPACE_NAME` | MetaMemory | Feishu Wiki space name |
 | `WIKI_AUTO_SYNC` | true | Auto-sync on MetaMemory changes (debounced) |

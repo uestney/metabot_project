@@ -75,7 +75,8 @@ One-way sync from MetaMemory documents to a Feishu Wiki space. The folder tree i
 **API endpoints:** `POST /api/sync` (trigger), `GET /api/sync` (status), `POST /api/sync/document` (single doc sync), `GET /api/feishu/document` (read Feishu doc).
 
 **Environment variables:**
-- `WIKI_SYNC_ENABLED` — Set to `false` to disable (default: enabled when Feishu bots exist)
+- `FEISHU_SERVICE_APP_ID` / `FEISHU_SERVICE_APP_SECRET` — Dedicated Feishu app for wiki sync & doc reader (falls back to first Feishu bot if not set)
+- `WIKI_SYNC_ENABLED` — Set to `false` to disable (default: enabled when service app or Feishu bots exist)
 - `WIKI_SPACE_NAME` — Wiki space name (default: `MetaMemory`)
 - `WIKI_SYNC_THROTTLE_MS` — Delay between API calls (default: 300ms)
 - `WIKI_AUTO_SYNC` — Set to `false` to disable auto-sync (default: enabled when wiki sync is configured)

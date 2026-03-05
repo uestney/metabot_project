@@ -35,6 +35,11 @@ export interface TelegramBotConfig extends BotConfigBase {
 export interface AppConfig {
   feishuBots: BotConfig[];
   telegramBots: TelegramBotConfig[];
+  /** Dedicated Feishu service app for wiki sync & doc reader (independent of chat bots). */
+  feishuService?: {
+    appId: string;
+    appSecret: string;
+  };
   log: {
     level: string;
   };
@@ -245,6 +250,20 @@ export function loadAppConfig(): AppConfig {
     process.env.METABOT_API_SECRET = apiSecret;
   }
 
+  // Feishu service app for wiki sync & doc reader (falls back to first Feishu bot)
+  let feishuService: AppConfig['feishuService'];
+  if (process.env.FEISHU_SERVICE_APP_ID && process.env.FEISHU_SERVICE_APP_SECRET) {
+    feishuService = {
+      appId: process.env.FEISHU_SERVICE_APP_ID,
+      appSecret: process.env.FEISHU_SERVICE_APP_SECRET,
+    };
+  } else if (feishuBots.length > 0) {
+    feishuService = {
+      appId: feishuBots[0].feishu.appId,
+      appSecret: feishuBots[0].feishu.appSecret,
+    };
+  }
+
   const memoryEnabled = process.env.MEMORY_ENABLED !== 'false';
   const memoryPort = process.env.MEMORY_PORT ? parseInt(process.env.MEMORY_PORT, 10) : 8100;
   const memoryDatabaseDir = process.env.MEMORY_DATABASE_DIR || './data';
@@ -255,6 +274,7 @@ export function loadAppConfig(): AppConfig {
   return {
     feishuBots,
     telegramBots,
+    feishuService,
     log: {
       level: process.env.LOG_LEVEL || 'info',
     },
