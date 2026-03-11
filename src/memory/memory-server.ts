@@ -157,17 +157,6 @@ export function startMemoryServer(options: MemoryServerOptions): { server: http.
       return;
     }
 
-    // Resolve role for API routes
-    let role: Role = 'admin';
-    if (pathname.startsWith('/api/')) {
-      const resolved = resolveRole(req);
-      if (resolved === null) {
-        jsonResponse(res, 401, { detail: 'Unauthorized' });
-        return;
-      }
-      role = resolved;
-    }
-
     try {
       // --- API Routes ---
 
@@ -176,6 +165,17 @@ export function startMemoryServer(options: MemoryServerOptions): { server: http.
         const result = handleHealth(storage);
         jsonResponse(res, result.status, result.body);
         return;
+      }
+
+      // Resolve role for authenticated API routes
+      let role: Role = 'admin';
+      if (pathname.startsWith('/api/')) {
+        const resolved = resolveRole(req);
+        if (resolved === null) {
+          jsonResponse(res, 401, { detail: 'Unauthorized' });
+          return;
+        }
+        role = resolved;
       }
 
       // Folders

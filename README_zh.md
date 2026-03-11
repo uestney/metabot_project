@@ -101,7 +101,7 @@ npm run dev
 1. 找 [@BotFather](https://t.me/BotFather) → `/newbot` → 复制 token
 2. 写入 `bots.json` → 完成（长轮询，无需 Webhook）
 
-**飞书**（[详细指南](docs/feishu-setup.md)）：
+**飞书**：
 1. [open.feishu.cn](https://open.feishu.cn/) 创建应用 → 添加「机器人」能力
 2. 开通权限：`im:message`、`im:message:readonly`、`im:resource`、`docx:document:readonly`、`wiki:wiki`（文档阅读和知识库同步）
 3. 先启动 MetaBot，再开启「长连接」+ `im.message.receive_v1` 事件

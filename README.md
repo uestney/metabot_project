@@ -101,7 +101,7 @@ Prerequisites: Node.js 20+, [Claude Code CLI](https://github.com/anthropics/clau
 1. Message [@BotFather](https://t.me/BotFather) → `/newbot` → copy token
 2. Add to `bots.json` → done (long polling, no webhooks)
 
-**Feishu/Lark** ([detailed guide](docs/feishu-setup.md)):
+**Feishu/Lark**:
 1. Create app at [open.feishu.cn](https://open.feishu.cn/) → add Bot capability
 2. Enable permissions: `im:message`, `im:message:readonly`, `im:resource`, `docx:document:readonly`, `wiki:wiki` (for doc reading & wiki sync)
 3. Start MetaBot, then enable persistent connection + `im.message.receive_v1` event

@@ -40,6 +40,28 @@ describe('MetaMemory server request limits', () => {
     };
   }
 
+  async function startAuthenticatedTestServer() {
+    const databaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'metamemory-auth-test-'));
+    cleanups.push(() => fs.rmSync(databaseDir, { recursive: true, force: true }));
+
+    const { server, storage } = startMemoryServer({
+      port: 0,
+      databaseDir,
+      secret: 'test-secret',
+      logger: createLogger(),
+    });
+
+    cleanups.push(() => storage.close());
+    cleanups.push(() => server.close());
+
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address() as AddressInfo;
+
+    return {
+      url: `http://127.0.0.1:${address.port}`,
+    };
+  }
+
   it('returns 400 for invalid JSON bodies', async () => {
     const { url } = await startTestServer();
 
@@ -71,6 +93,19 @@ describe('MetaMemory server request limits', () => {
     expect(response.status).toBe(413);
     await expect(response.json()).resolves.toEqual({
       detail: 'Request body too large (max 10 MB)',
+    });
+  });
+
+  it('allows unauthenticated health checks while keeping other API routes protected', async () => {
+    const { url } = await startAuthenticatedTestServer();
+
+    const healthResponse = await fetch(`${url}/api/health`);
+    expect(healthResponse.status).toBe(200);
+
+    const foldersResponse = await fetch(`${url}/api/folders`);
+    expect(foldersResponse.status).toBe(401);
+    await expect(foldersResponse.json()).resolves.toEqual({
+      detail: 'Unauthorized',
     });
   });
 });
