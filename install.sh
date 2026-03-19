@@ -16,8 +16,8 @@ fi
 # ============================================================================
 # Configuration defaults
 # ============================================================================
-METABOT_HOME="${METABOT_HOME:-$HOME/workspace/service/metabot}"
-METABOT_REPO="${METABOT_REPO:-https://github.com/tomjamescn/metabot.git}"
+METABOT_HOME="${METABOT_HOME:-$HOME/metabot}"
+METABOT_REPO="${METABOT_REPO:-https://github.com/xvirobotics/metabot.git}"
 
 # ============================================================================
 # Colors and formatting
