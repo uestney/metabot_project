@@ -89,7 +89,7 @@ const MAX_RETRIES = 5;
 const RETRY_DELAY_MS = 30_000; // 30 seconds
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_SETTIMEOUT_MS = 2_147_483_647; // 2^31 - 1 (~24.8 days)
-const PERSIST_DIR = path.join(os.homedir(), '.metabot');
+const PERSIST_DIR = process.env.METABOT_DATA_DIR || path.join(os.homedir(), '.metabot');
 const PERSIST_FILE = path.join(PERSIST_DIR, 'scheduled-tasks.json');
 
 /**
