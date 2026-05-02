@@ -72,9 +72,8 @@ function makeApp(bot) {
       META_MEMORY_URL:     `http://localhost:${bot.memoryPort}`,
       // 不限制 turn 数（沿用旧 metabot 配置）
       CLAUDE_MAX_TURNS:    '',
-      // 卡片 schema：v2 灰度试用（仅 PA），其他 bot 走默认 v1
-      // PA 主人确认是基线 OK 状态，用它对照测最干净
-      ...(bot.name === 'PA' ? { CARD_SCHEMA_V2: 'true' } : {}),
+      // 卡片 schema：v2 全员启用（PA 灰度通过后切换全部）
+      CARD_SCHEMA_V2: 'true',
     },
   };
 }
