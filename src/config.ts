@@ -237,6 +237,7 @@ function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
 // --- Shared Claude config builder ---
 
 function buildClaudeConfig(entry: {
+  name?: string;
   defaultWorkingDirectory: string;
   maxTurns?: number;
   maxBudgetUsd?: number;
@@ -245,14 +246,16 @@ function buildClaudeConfig(entry: {
   outputsBaseDir?: string;
   downloadsDir?: string;
 }): BotConfigBase['claude'] {
+  const username = os.userInfo().username;
+  const botName  = entry.name || process.env.BOT_NAME || 'default';
   return {
     defaultWorkingDirectory: expandUserPath(entry.defaultWorkingDirectory),
     maxTurns: entry.maxTurns ?? (process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined),
     maxBudgetUsd: entry.maxBudgetUsd ?? (process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined),
     model: entry.model || process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-opus-4-6',
     apiKey: entry.apiKey || undefined,
-    outputsBaseDir: entry.outputsBaseDir || process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
-    downloadsDir: entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
+    outputsBaseDir: entry.outputsBaseDir || process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot_temp_${username}_${botName}`),
+    downloadsDir: entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${username}`),
   };
 }
 
@@ -271,7 +274,7 @@ function feishuBotFromEnv(): BotConfig {
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-opus-4-6',
       apiKey: undefined,
-      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
+      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot_temp_${os.userInfo().username}_${process.env.BOT_NAME || 'default'}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
     },
   };
@@ -289,7 +292,7 @@ function telegramBotFromEnv(): TelegramBotConfig {
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-opus-4-6',
       apiKey: undefined,
-      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
+      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot_temp_${os.userInfo().username}_${process.env.BOT_NAME || 'default'}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
     },
   };
