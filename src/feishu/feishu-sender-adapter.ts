@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import type { IMessageSender } from '../bridge/message-sender.interface.js';
 import type { CardState } from '../types.js';
 import { MessageSender } from './message-sender.js';
-import { buildCard, buildTextCard } from './card-builder.js';
+import { buildCard, buildTextCard } from './card-builder--legacy.js';
 import { buildCardV2, buildTextCardV2 } from './card-builder-v2.js';
 import { OutputsManager } from '../bridge/outputs-manager.js';
 
