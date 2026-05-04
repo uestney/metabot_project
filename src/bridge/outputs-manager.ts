@@ -21,7 +21,7 @@ export class OutputsManager {
   /**
    * Prepare the per-bot outputs directory.
    * The directory is per-bot (baseDir already includes bot identity),
-   * e.g. /tmp/metabot-outputs-ameng/invoker/
+   * e.g. /tmp/metabot-outputs-<user>/<botName>/
    * Clears all existing files to ensure a clean slate before each execution.
    */
   prepareDir(_chatId: string): string {

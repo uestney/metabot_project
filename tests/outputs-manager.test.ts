@@ -25,29 +25,26 @@ describe('OutputsManager', () => {
   });
 
   describe('prepareDir', () => {
-    it('creates a chat-specific directory', () => {
+    it('returns the base directory (per-bot, not per-chat)', () => {
       const dir = manager.prepareDir('chat-123');
       expect(fs.existsSync(dir)).toBe(true);
-      expect(dir).toBe(path.join(tmpDir, 'chat-123'));
+      expect(dir).toBe(tmpDir);
     });
 
-    it('keeps recent files in existing directory', () => {
+    it('clears all existing files on prepare', () => {
       const dir = manager.prepareDir('chat-123');
+      fs.writeFileSync(path.join(dir, 'old.txt'), 'old content');
       fs.writeFileSync(path.join(dir, 'recent.txt'), 'recent content');
-      const dir2 = manager.prepareDir('chat-123');
-      // Recent files should be preserved (within retention window)
-      expect(fs.readdirSync(dir2)).toContain('recent.txt');
+      const dir2 = manager.prepareDir('chat-456');
+      // All files should be cleared regardless of age
+      expect(fs.readdirSync(dir2)).toHaveLength(0);
     });
 
-    it('removes old files beyond retention window', () => {
-      const dir = manager.prepareDir('chat-123');
-      const filePath = path.join(dir, 'old.txt');
-      fs.writeFileSync(filePath, 'old content');
-      // Backdate the file to 10 minutes ago
-      const oldTime = new Date(Date.now() - 10 * 60 * 1000);
-      fs.utimesSync(filePath, oldTime, oldTime);
-      const dir2 = manager.prepareDir('chat-123');
-      expect(fs.readdirSync(dir2)).not.toContain('old.txt');
+    it('creates directory if it does not exist', () => {
+      const newDir = path.join(tmpDir, 'subdir');
+      const subManager = new OutputsManager(newDir, mockLogger);
+      const dir = subManager.prepareDir('chat-123');
+      expect(fs.existsSync(dir)).toBe(true);
     });
   });
 
@@ -107,17 +104,14 @@ describe('OutputsManager', () => {
   });
 
   describe('cleanup', () => {
-    it('schedules deferred removal of the outputs directory', () => {
-      vi.useFakeTimers();
+    it('immediately removes all files in the directory', () => {
       const dir = manager.prepareDir('chat-1');
       fs.writeFileSync(path.join(dir, 'file.txt'), 'data');
+      fs.writeFileSync(path.join(dir, 'img.png'), 'png');
       manager.cleanup(dir);
-      // Directory still exists immediately after cleanup call
+      // Files should be removed immediately, directory still exists
       expect(fs.existsSync(dir)).toBe(true);
-      // Fast-forward past the retention window (5 min)
-      vi.advanceTimersByTime(5 * 60 * 1000 + 100);
-      expect(fs.existsSync(dir)).toBe(false);
-      vi.useRealTimers();
+      expect(fs.readdirSync(dir)).toHaveLength(0);
     });
 
     it('handles non-existent directory gracefully', () => {
