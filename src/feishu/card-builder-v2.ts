@@ -20,11 +20,21 @@ const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: st
   waiting_for_input: { color: 'yellow', title: 'Waiting for Input', icon: '🟡' },
 };
 
-const MAX_CONTENT_LENGTH = 28000;
+/**
+ * Feishu card JSON limit is ~30KB.
+ * Reserve bytes for card structure (header, config, tool calls, stats footer).
+ * Must check BYTE length, not character count — CJK chars are 3 bytes each,
+ * so 28000 chars of Chinese = 84KB, way over the limit.
+ */
+const MAX_CONTENT_BYTES = 20000;
 
 function truncateContent(text: string): string {
-  if (text.length <= MAX_CONTENT_LENGTH) return text;
-  const half = Math.floor(MAX_CONTENT_LENGTH / 2) - 50;
+  const byteLen = Buffer.byteLength(text, 'utf8');
+  if (byteLen <= MAX_CONTENT_BYTES) return text;
+  // Estimate char-to-byte ratio for this specific text (e.g. 0.33 for CJK, 1.0 for ASCII)
+  const ratio      = text.length / byteLen;
+  const targetChars = Math.floor(MAX_CONTENT_BYTES * ratio * 0.95); // 5% safety margin
+  const half        = Math.floor(targetChars / 2) - 50;
   return text.slice(0, half) + '\n\n... (content truncated) ...\n\n' + text.slice(-half);
 }
 

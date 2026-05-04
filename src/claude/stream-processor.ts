@@ -30,6 +30,7 @@ export class StreamProcessor {
   private _model: string | undefined;
   private _totalTokens: number | undefined;
   private _contextWindow: number | undefined;
+  private _hasEncodingCorruption = false;
   // Track per-API-call usage from stream events for accurate context window display
   private _lastInputTokens: number | undefined;
   private _lastOutputTokens: number | undefined;
@@ -63,6 +64,9 @@ export class StreamProcessor {
         // SDK 0.2 message types — no action needed for card display
         break;
     }
+
+    // Strip any U+FFFD from streaming text before card update
+    this.sanitizeResponseText();
 
     // Determine running status
     const hasActiveTools = this.toolCalls.some((t) => t.status === 'running');
@@ -104,6 +108,19 @@ export class StreamProcessor {
       } else if (block.type === 'tool_result') {
         this.completeCurrentTool();
       }
+    }
+  }
+
+  /**
+   * Detect and strip U+FFFD replacement characters from response text.
+   * Claude API never outputs U+FFFD — its presence indicates byte-level corruption
+   * during SDK/CLI stdout streaming (UTF-8 split across read boundaries).
+   * Stripping them is imperfect (lost chars) but better than showing "��" to users.
+   */
+  private sanitizeResponseText(): void {
+    if (this.responseText.includes('\ufffd')) {
+      this._hasEncodingCorruption = true;
+      this.responseText = this.responseText.replace(/\ufffd/g, '');
     }
   }
 
@@ -185,6 +202,10 @@ export class StreamProcessor {
     for (const tool of this.toolCalls) {
       tool.status = 'done';
     }
+
+    // Sanitize before building the final state — strip any U+FFFD that leaked
+    // from SDK stdout byte-boundary splits
+    this.sanitizeResponseText();
 
     const resultText = message.result || this.responseText;
     const isError = message.subtype !== 'success';
@@ -311,6 +332,11 @@ export class StreamProcessor {
 
   getPlanFilePath(): string | null {
     return this._planFilePath;
+  }
+
+  /** True if U+FFFD was detected and stripped from the response text */
+  hadEncodingCorruption(): boolean {
+    return this._hasEncodingCorruption;
   }
 }
 
