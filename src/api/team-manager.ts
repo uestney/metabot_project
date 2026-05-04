@@ -20,7 +20,7 @@ export class TeamManager {
 
   constructor(logger: Logger) {
     this.logger = logger.child({ module: 'team-manager' });
-    const dbDir = path.join(os.homedir(), '.metabot');
+    const dbDir = process.env.METABOT_DATA_DIR || path.join(os.homedir(), '.metabot');
     if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
     const dbPath = path.join(dbDir, 'teams.db');
     this.db = new Database(dbPath);

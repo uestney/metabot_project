@@ -26,7 +26,8 @@ export class BudgetManager {
 
   constructor(logger: Logger) {
     this.logger = logger.child({ module: 'budget' });
-    this.dataPath = path.join(os.homedir(), '.metabot', 'budgets.json');
+    const dataDir = process.env.METABOT_DATA_DIR || path.join(os.homedir(), '.metabot');
+    this.dataPath = path.join(dataDir, 'budgets.json');
     this.load();
   }
 

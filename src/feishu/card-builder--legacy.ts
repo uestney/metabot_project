@@ -10,11 +10,18 @@ const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: st
   waiting_for_input: { color: 'yellow', title: 'Waiting for Input', icon: '🟡' },
 };
 
-const MAX_CONTENT_LENGTH = 28000;
+/**
+ * Feishu card JSON limit is ~30KB.
+ * Must check BYTE length — CJK chars are 3 bytes each.
+ */
+const MAX_CONTENT_BYTES = 20000;
 
 function truncateContent(text: string): string {
-  if (text.length <= MAX_CONTENT_LENGTH) return text;
-  const half = Math.floor(MAX_CONTENT_LENGTH / 2) - 50;
+  const byteLen = Buffer.byteLength(text, 'utf8');
+  if (byteLen <= MAX_CONTENT_BYTES) return text;
+  const ratio      = text.length / byteLen;
+  const targetChars = Math.floor(MAX_CONTENT_BYTES * ratio * 0.95);
+  const half        = Math.floor(targetChars / 2) - 50;
   return (
     text.slice(0, half) +
     '\n\n... (content truncated) ...\n\n' +

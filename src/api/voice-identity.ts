@@ -19,7 +19,8 @@ export class VoiceIdentityStore {
 
   constructor(logger: Logger) {
     this.logger = logger.child({ module: 'voice-identity' });
-    this.dataPath = path.join(os.homedir(), '.metabot', 'voice-identities.json');
+    const dataDir = process.env.METABOT_DATA_DIR || path.join(os.homedir(), '.metabot');
+    this.dataPath = path.join(dataDir, 'voice-identities.json');
     this.load();
   }
 

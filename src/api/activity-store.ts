@@ -31,7 +31,9 @@ export class ActivityStore {
   private buffer: ActivityEvent[] = [];
 
   constructor(private logger: Logger) {
-    const dataDir = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.metabot');
+    const dataDir = process.env.SESSION_STORE_DIR
+      || process.env.METABOT_DATA_DIR
+      || path.join(os.homedir(), '.metabot');
     fs.mkdirSync(dataDir, { recursive: true });
     const dbPath = path.join(dataDir, 'activity.db');
     this.db = new Database(dbPath);

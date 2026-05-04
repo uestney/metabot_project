@@ -237,6 +237,7 @@ function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
 // --- Shared Claude config builder ---
 
 function buildClaudeConfig(entry: {
+  name?: string;
   defaultWorkingDirectory: string;
   maxTurns?: number;
   maxBudgetUsd?: number;
@@ -245,14 +246,16 @@ function buildClaudeConfig(entry: {
   outputsBaseDir?: string;
   downloadsDir?: string;
 }): BotConfigBase['claude'] {
+  const username = os.userInfo().username;
+  const botName  = entry.name || process.env.BOT_NAME || 'default';
   return {
     defaultWorkingDirectory: expandUserPath(entry.defaultWorkingDirectory),
     maxTurns: entry.maxTurns ?? (process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined),
     maxBudgetUsd: entry.maxBudgetUsd ?? (process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined),
     model: entry.model || process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-opus-4-6',
     apiKey: entry.apiKey || undefined,
-    outputsBaseDir: entry.outputsBaseDir || process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
-    downloadsDir: entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
+    outputsBaseDir: entry.outputsBaseDir || process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot_temp_${username}_${botName}`),
+    downloadsDir: entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${username}`),
   };
 }
 
@@ -271,7 +274,7 @@ function feishuBotFromEnv(): BotConfig {
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-opus-4-6',
       apiKey: undefined,
-      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
+      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot_temp_${os.userInfo().username}_${process.env.BOT_NAME || 'default'}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
     },
   };
@@ -289,7 +292,7 @@ function telegramBotFromEnv(): TelegramBotConfig {
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-opus-4-6',
       apiKey: undefined,
-      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
+      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot_temp_${os.userInfo().username}_${process.env.BOT_NAME || 'default'}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
     },
   };
@@ -331,6 +334,7 @@ export interface BotsJsonNewFormat {
 
 export function loadAppConfig(): AppConfig {
   const botsConfigPath = process.env.BOTS_CONFIG;
+  const botNameFilter  = process.env.BOT_NAME;  // 单 bot 进程模式：只保留此名 bot
 
   let feishuBots: BotConfig[] = [];
   let telegramBots: TelegramBotConfig[] = [];
@@ -384,6 +388,21 @@ export function loadAppConfig(): AppConfig {
     }
     if (feishuBots.length === 0 && telegramBots.length === 0 && wechatBots.length === 0) {
       throw new Error('No bot configured. Set FEISHU_APP_ID/FEISHU_APP_SECRET, TELEGRAM_BOT_TOKEN, or WECHAT_ILINK_ENABLED=true, or use BOTS_CONFIG for multi-bot mode.');
+    }
+  }
+
+  // 单 bot 进程模式：BOT_NAME 设置时，跨所有平台只保留同名的那一个 bot
+  if (botNameFilter) {
+    feishuBots   = feishuBots.filter((b) => b.name === botNameFilter);
+    telegramBots = telegramBots.filter((b) => b.name === botNameFilter);
+    webBots      = webBots.filter((b) => b.name === botNameFilter);
+    wechatBots   = wechatBots.filter((b) => b.name === botNameFilter);
+    const total = feishuBots.length + telegramBots.length + webBots.length + wechatBots.length;
+    if (total === 0) {
+      throw new Error(`BOT_NAME="${botNameFilter}" 在 bots.json 里不存在任何匹配条目`);
+    }
+    if (total > 1) {
+      throw new Error(`BOT_NAME="${botNameFilter}" 匹配了多个不同平台的 bot，请重命名其中一个保证唯一`);
     }
   }
 

@@ -1,0 +1,16 @@
+# Playwright 浏览器登录态（含飞书 cookie，本机敏感）
+state.json
+browser-state.json
+
+# 截图（调试输出，可能包含 token / 二维码 / 个人邮箱）
+screenshots/
+
+# 运行结果（可能含 App Secret 反查信息）
+*-results.json
+secrets.json
+results*.json
+login-status.txt
+
+# Node
+node_modules/
+package-lock.json.bak
