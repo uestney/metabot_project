@@ -163,7 +163,7 @@ export class SessionManager {
         if (now - persisted.lastUsed > SESSION_TTL_MS) continue;
         this.sessions.set(chatId, {
           sessionId: persisted.sessionId,
-          workingDirectory: persisted.workingDirectory,
+          workingDirectory: this.defaultWorkingDirectory,
           lastUsed: persisted.lastUsed,
           cumulativeTokens: persisted.cumulativeTokens ?? 0,
           cumulativeCostUsd: persisted.cumulativeCostUsd ?? 0,

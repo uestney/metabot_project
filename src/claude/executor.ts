@@ -25,6 +25,86 @@ function resolveClaudePath(): string {
 const CLAUDE_EXECUTABLE = resolveClaudePath();
 
 /**
+ * Parse .env file into a Record<string, string>.
+ * Does NOT modify process.env. Supports # comments and skips empty lines.
+ */
+function parseEnvFile(filePath: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIndex = trimmed.indexOf('=');
+      if (eqIndex === -1) continue;
+      const key = trimmed.slice(0, eqIndex).trim();
+      const value = trimmed.slice(eqIndex + 1).trim();
+      // Remove surrounding quotes if present
+      const unquoted = value.replace(/^["']|["']$/g, '');
+      result[key] = unquoted;
+    }
+  } catch {
+    // File doesn't exist or can't be read — return empty
+  }
+  return result;
+}
+
+/**
+ * Load .env from metabot directory (where ecosystem.config.cjs lives).
+ */
+const metabotDir = path.dirname(fileURLToPath(import.meta.url)).replace(/\/src\/claude$/, '');
+const envFromFile = parseEnvFile(path.join(metabotDir, '.env'));
+
+/**
+ * Hardcoded overrides for Claude Code environment variables.
+ * These have the HIGHEST priority and will override everything else.
+ * This is the reliable way to inject env vars into Claude Code subprocess.
+ */
+const CLAUDE_ENV_OVERRIDE: Record<string, string> = {
+  ANTHROPIC_BASE_URL: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
+  ANTHROPIC_AUTH_TOKEN: 'sk-sp-1630ac06df88444f82f02b090a0d9d04',
+  ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5',
+  ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-5',
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-4.7',
+  CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '72',
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+};
+
+/**
+ * Build environment variables for Claude Code SDK subprocess.
+ * Priority (low → high):
+ *   1. process.env (system environment)
+ *   2. envFromFile (.env file in metabot directory)
+ *   3. CLAUDE_ENV_OVERRIDE (hardcoded overrides — highest)
+ */
+function buildSdkEnv(filterAuthVars: boolean, explicitApiKey?: string): Record<string, string> {
+  // Start with process.env, filtered
+  const filteredProcessEnv: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined) continue;
+    // Filter CLAUDE* to prevent nested session errors (except our overrides)
+    if (key.startsWith('CLAUDE') && !CLAUDE_ENV_OVERRIDE.hasOwnProperty(key)) continue;
+    // Filter auth vars if needed
+    if (filterAuthVars && AUTH_ENV_VARS.some(v => key.startsWith(v))) continue;
+    filteredProcessEnv[key] = value;
+  }
+
+  // Merge with priority chain
+  const env = {
+    ...filteredProcessEnv,     // Layer 1: system env (filtered)
+    ...envFromFile,            // Layer 2: .env file
+    ...CLAUDE_ENV_OVERRIDE,    // Layer 3: hardcoded overrides (highest priority)
+  };
+
+  // Inject explicit API key if provided
+  if (explicitApiKey) {
+    env.ANTHROPIC_API_KEY = explicitApiKey;
+  }
+
+  return env;
+}
+
+/**
  * Env var prefixes to always strip from the inherited process environment.
  * CLAUDE*: prevents "nested session" errors from the SDK.
  */
@@ -53,11 +133,8 @@ function hasCredentialsFile(): boolean {
 /**
  * Create a custom spawn function for cross-platform compatibility.
  * - Uses process.execPath (current Node binary) to avoid PATH issues on Windows.
- * - Always filters CLAUDE* env vars to prevent nested session errors.
- * - Filters ANTHROPIC auth env vars only when an explicit API key is provided
- *   or credentials.json exists (so env-var-only users can still authenticate).
- * - Merges process.env so child inherits system PATH, TEMP, etc.
- * - Optionally injects an explicit ANTHROPIC_API_KEY from bots.json config.
+ * - Builds env via buildSdkEnv() with proper priority chain.
+ * - Injects explicit API key if provided.
  */
 function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => SpawnedProcess {
   // Decide once whether to filter auth env vars
@@ -66,24 +143,8 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
   return (options: SpawnOptions): SpawnedProcess => {
     const nodePath = process.execPath;
 
-    // Merge provided env with process.env for a complete environment
-    const baseEnv = options.env && Object.keys(options.env).length > 0
-      ? { ...process.env, ...options.env }
-      : { ...process.env };
-
-    // Filter out env vars that interfere with auth or cause nested session errors
-    const env: Record<string, string> = {};
-    for (const [key, value] of Object.entries(baseEnv)) {
-      if (value === undefined) continue;
-      if (ALWAYS_FILTERED_PREFIXES.some(p => key.startsWith(p))) continue;
-      if (filterAuthVars && AUTH_ENV_VARS.some(v => key.startsWith(v))) continue;
-      env[key] = value;
-    }
-
-    // Inject explicit API key from bots.json (after filtering, so it takes effect)
-    if (explicitApiKey) {
-      env.ANTHROPIC_API_KEY = explicitApiKey;
-    }
+    // Build env with priority chain (process.env → .env → overrides)
+    const env = buildSdkEnv(filterAuthVars, explicitApiKey);
 
     const child = spawn(nodePath, options.args, {
       cwd: options.cwd,
@@ -238,9 +299,9 @@ export class ClaudeExecutor {
       queryOptions.maxBudgetUsd = this.config.claude.maxBudgetUsd;
     }
 
-    if (this.config.claude.model) {
-      queryOptions.model = this.config.claude.model;
-    }
+    // NOTE: model is NOT set here — it's controlled via environment variables
+    // (ANTHROPIC_DEFAULT_OPUS_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL, etc.)
+    // which are injected via buildSdkEnv() in createSpawnFn()
 
     if (sessionId) {
       queryOptions.resume = sessionId;
