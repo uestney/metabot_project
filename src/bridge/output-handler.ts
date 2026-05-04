@@ -39,6 +39,8 @@ export class OutputHandler {
           this.logger.warn({ filePath: file.filePath, sizeBytes: file.sizeBytes }, 'Output file too large to send');
         }
         sentPaths.add(file.filePath);
+        // Immediately delete sent file to avoid duplicate sends on re-scan
+        try { fs.unlinkSync(file.filePath); } catch { /* ignore */ }
       } catch (err) {
         this.logger.warn({ err, filePath: file.filePath }, 'Failed to send output file');
       }
