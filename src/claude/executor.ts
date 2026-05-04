@@ -59,10 +59,12 @@ const envFromFile = parseEnvFile(path.join(metabotDir, '.env'));
  * Hardcoded overrides for Claude Code environment variables.
  * These have the HIGHEST priority and will override everything else.
  * This is the reliable way to inject env vars into Claude Code subprocess.
+ *
+ * IMPORTANT: Only non-sensitive defaults are hardcoded here.
+ * Sensitive values (ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL) should be
+ * configured in .env file which is NOT tracked in git.
  */
 const CLAUDE_ENV_OVERRIDE: Record<string, string> = {
-  ANTHROPIC_BASE_URL: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
-  ANTHROPIC_AUTH_TOKEN: 'sk-sp-1630ac06df88444f82f02b090a0d9d04',
   ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5',
   ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-5',
   ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-4.7',
