@@ -20,7 +20,7 @@ export class OutputsManager {
 
   /**
    * Prepare the per-bot outputs directory.
-   * The directory is now per-bot (not per-chat) — e.g. /tmp/metabot_temp_ameng_invoker/
+   * The directory is now per-bot (not per-chat) — e.g. /tmp/metabot_temp_<user>_<bot>/
    * Clear all existing files to ensure a clean slate before each execution.
    */
   prepareDir(_chatId: string): string {

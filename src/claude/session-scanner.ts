@@ -2,7 +2,7 @@
  * Session Scanner — scans ~/.claude/projects/ for local Claude Code desktop sessions.
  *
  * Each working directory maps to a folder under ~/.claude/projects/ with the path
- * encoded as hyphens (e.g. /vepfs/users/ameng/workspace/SF → -vepfs-users-ameng-workspace-SF).
+ * encoded as hyphens (e.g. /home/user/workspace/SF → -home-user-workspace-SF).
  * Inside each folder, .jsonl files are individual sessions.
  *
  * This module extracts metadata from those files so invoker can present a list
@@ -38,7 +38,7 @@ export interface LocalSession {
 /**
  * Convert a working directory path to the Claude projects folder name.
  * Claude Code replaces both `/` and `_` with `-`.
- * /vepfs/users/ameng/workspace/metabot_SF → -vepfs-users-ameng-workspace-metabot-SF
+ * /home/user/workspace/metabot_SF → -home-user-workspace-metabot-SF
  */
 export function workDirToProjectFolder(workDir: string): string {
   return workDir.replace(/[/_]/g, '-');

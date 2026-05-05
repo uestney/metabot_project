@@ -58,8 +58,8 @@
 #   ./01-switch-bot.sh <botName> <workDir> [sessionId]
 #
 # 示例:
-#   ./01-switch-bot.sh NP /vepfs/users/ameng/workspace/ytb-video-downloader a1528f93-010e-4511-a16b-12d183964b88
-#   ./01-switch-bot.sh SF /vepfs/users/ameng/workspace/dream-factory
+#   ./01-switch-bot.sh NP /home/user/workspace/my-project a1528f93-010e-4511-a16b-12d183964b88
+#   ./01-switch-bot.sh SF /home/user/workspace/another-project
 #
 # 步骤:
 #   1. 验证参数（bot 名称、目标目录是否存在）
