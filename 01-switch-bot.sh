@@ -2,6 +2,58 @@
 # ============================================================================
 # 01-switch-bot.sh — 切换 MetaBot 机器人的工作目录和 Session
 #
+# ============================================================================
+# 【踩坑记录】— 2025-05-05 Session 切换实战经验
+# ============================================================================
+#
+# 本次切换过程中遇到的问题和解决方案，供后续参考：
+#
+# ── 问题 1: ecosystem.config.cjs 配置缺失 ────────────────────────────────────
+# 现象：PM2 配置文件中没有 metabot，只有 invoker/nec-bot/SF/PA 等。
+# 原因：ecosystem.config.cjs 的 BOTS 数组是预定义的模板，不包含实际运行的 bot。
+# 解决：在 BOTS 数组开头添加 { name: 'metabot', apiPort: 9100, memoryPort: 8100 }
+#
+# ── 问题 2: BOT_NAME 环境变量未设置 ──────────────────────────────────────────
+# 现象：PM2 直接启动（pm2 start npx --name metabot）时 pending-switch 不生效。
+# 原因：代码检查 if (botName) 才处理 pending-switch，但 PM2 直接启动不设置该变量。
+# 解决：必须使用 pm2 start ecosystem.config.cjs --only <botName>
+#       配置文件中会自动设置 BOT_NAME: bot.name
+#
+# ── 问题 3: 数据目录路径不匹配 ────────────────────────────────────────────────
+# 现象：脚本期望 ~/.metabot/metabot/，但旧数据在 ~/.metabot/
+# 原因：单 bot 模式下数据目录是 ~/.metabot/，多 bot 模式是 ~/.metabot/<name>/
+# 解决：创建 ~/.metabot/metabot/ 目录，确保与 ecosystem.config.cjs 中
+#       METABOT_DATA_DIR 配置一致
+#
+# ── 问题 4: pending-switch.json 历史为空或伪造 ───────────────────────────────
+# 现象：飞书收到切换通知，但历史内容是空的或不是真实对话。
+# 原因：metabot 不会自动从 session 文件提取历史，只读取 pending-switch.json
+#       中已有的 recentHistory 字段。
+# 解决：本脚本已包含从 ~/.claude/projects/*.jsonl 提取历史的逻辑
+#       （见 Step 3 的 Python 代码）
+#
+# ── 问题 5: 【核心问题】sessionId 未注入 sessionManager ───────────────────────
+# 现象：飞书收到正确的切换通知卡片，但 Claude 执行时是全新 session，
+#       不记得之前的对话内容。
+# 原因：代码流程是：
+#   1. pendingSwitchNotice → 提取 sessionId（只用于显示卡片）
+#   2. sessionManager.getSession(chatId) → 返回存储的 session
+#   3. executor.startExecution({ sessionId: session.sessionId }) → 传给 Claude
+#   缺失的环节：步骤1和步骤2之间没有连接，sessionId 显示了但没存入 sessionManager
+# 解决：修改 message-bridge.ts，在发送卡片前先注入：
+#   if (sessionId) {
+#     this.sessionManager.setSessionId(chatId, sessionId);
+#   }
+# 文件位置：src/bridge/message-bridge.ts，handleMessage 方法开头
+#
+# ── 关键发现：代码检查清单 ───────────────────────────────────────────────────
+# 切换后 Claude 不记得历史时，检查以下环节：
+# 1. pending-switch.json 是否有正确的 sessionId 和 recentHistory
+# 2. PM2 是否通过 ecosystem.config.cjs 启动（而非 pm2 start npx）
+# 3. 启动日志是否显示 "Injected sessionId from pending switch"
+# 4. 执行日志是否显示 Starting Claude execution 时有正确的 sessionId
+#
+# ============================================================================
 # 用法:
 #   ./01-switch-bot.sh <botName> <workDir> [sessionId]
 #

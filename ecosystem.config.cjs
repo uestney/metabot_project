@@ -28,13 +28,15 @@ const LOGS_DIR = path.join(ROOT, 'logs');
  * 修改这里就能调整 bot 顺序 / 端口范围 / 增删 bot
  */
 const BOTS = [
-  { name: 'invoker',    apiPort: 10001, memoryPort: 10011 },
-  { name: 'nec-bot',    apiPort: 10002, memoryPort: 10012 },
-  { name: 'windranger', apiPort: 10003, memoryPort: 10013 },
-  { name: 'SF',         apiPort: 10004, memoryPort: 10014 },
-  { name: 'PA',         apiPort: 10005, memoryPort: 10015 },
-  { name: 'SA',         apiPort: 10006, memoryPort: 10016 },
-  { name: 'NP',         apiPort: 10007, memoryPort: 10017 },
+  { name: 'metabot',   apiPort: 9100,  memoryPort: 8100 },
+  { name: 'zhuge',     apiPort: 10002, memoryPort: 10012 },
+  { name: 'invoker',   apiPort: 10001, memoryPort: 10011 },
+  { name: 'nec-bot',   apiPort: 10003, memoryPort: 10013 },
+  { name: 'windranger',apiPort: 10004, memoryPort: 10014 },
+  { name: 'SF',        apiPort: 10005, memoryPort: 10015 },
+  { name: 'PA',        apiPort: 10006, memoryPort: 10016 },
+  { name: 'SA',        apiPort: 10007, memoryPort: 10017 },
+  { name: 'NP',        apiPort: 10008, memoryPort: 10018 },
 ];
 
 function makeApp(bot) {

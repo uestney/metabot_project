@@ -210,6 +210,14 @@ export class MessageBridge {
     if (this.pendingSwitchNotice) {
       const { workDir, sessionId, recentHistory } = this.pendingSwitchNotice;
       this.pendingSwitchNotice = undefined;
+
+      // Inject sessionId into sessionManager so Claude inherits the session
+      if (sessionId) {
+        const session = this.sessionManager.getSession(chatId);
+        this.sessionManager.setSessionId(chatId, sessionId);
+        this.logger.info({ chatId, sessionId: sessionId.slice(0, 8) }, 'Injected sessionId from pending switch');
+      }
+
       if (recentHistory && recentHistory.length > 0) {
         const lines: string[] = [
           `**项目已切换** → \`${workDir}\``,
