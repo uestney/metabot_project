@@ -65,8 +65,7 @@ const envFromFile = parseEnvFile(path.join(metabotDir, '.env'));
  * configurations should be set via .env file or environment variables.
  */
 const CLAUDE_ENV_OVERRIDE: Record<string, string> = {
-  CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '72',
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+  // All overrides should be configured via .env file, not hardcoded here.
 };
 
 /**
