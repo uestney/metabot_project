@@ -6,15 +6,14 @@
  * - 每个 bot 有独立的 API/Memory 端口、独立的 ~/.metabot/<name>/ 数据目录
  * - 重启某个 bot：`pm2 restart <bot-name>`
  *
- * 端口分配（invoker 是基准 10001，其他依次 +1）：
- *   invoker     API 10001, Memory 10011
- *   nec-bot     API 10002, Memory 10012
- *   windranger  API 10003, Memory 10013
- *   SF          API 10004, Memory 10014
- *   PA          API 10005, Memory 10015
- *   SA          API 10006, Memory 10016
- *   NP          API 10007, Memory 10017
+ * Bot 列表从 bots.json 自动读取，端口按顺序自动分配：
+ *   第 1 个 bot  API <BASE>,     Memory <BASE+10>
+ *   第 2 个 bot  API <BASE+1>,   Memory <BASE+11>
+ *   ...
+ *
+ * 端口基准可通过 .env 中 API_PORT_BASE 配置（默认 10001）。
  */
+const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
 
@@ -23,31 +22,36 @@ const TSX      = path.join(ROOT, 'node_modules', '.bin', 'tsx');
 const HOME     = os.homedir();
 const LOGS_DIR = path.join(ROOT, 'logs');
 
-/**
- * bot 列表 + 端口分配（invoker 在前作为基准）
- * 修改这里就能调整 bot 顺序 / 端口范围 / 增删 bot
- */
-const BOTS = [
-  { name: 'metabot',   apiPort: 9100,  memoryPort: 8100 },
-  { name: 'zhuge',     apiPort: 10002, memoryPort: 10012 },
-  { name: 'invoker',   apiPort: 10001, memoryPort: 10011 },
-  { name: 'nec-bot',   apiPort: 10003, memoryPort: 10013 },
-  { name: 'windranger',apiPort: 10004, memoryPort: 10014 },
-  { name: 'SF',        apiPort: 10005, memoryPort: 10015 },
-  { name: 'PA',        apiPort: 10006, memoryPort: 10016 },
-  { name: 'SA',        apiPort: 10007, memoryPort: 10017 },
-  { name: 'NP',        apiPort: 10008, memoryPort: 10018 },
-];
+// ── 从 bots.json 读取 bot 列表 ──────────────────────────────────────────────
+const BOTS_CONFIG_PATH = path.join(ROOT, 'bots.json');
+let botNames = [];
+try {
+  const data = JSON.parse(fs.readFileSync(BOTS_CONFIG_PATH, 'utf-8'));
+  botNames = (data.feishuBots || []).map(b => b.name);
+} catch (err) {
+  console.error(`[ecosystem] Failed to read ${BOTS_CONFIG_PATH}: ${err.message}`);
+  process.exit(1);
+}
 
-function makeApp(bot) {
-  const dataRoot = path.join(HOME, '.metabot', bot.name);
+// ── 端口基准（可通过 .env 覆盖） ────────────────────────────────────────────
+let apiPortBase = 10001;
+try {
+  const envFile = fs.readFileSync(path.join(ROOT, '.env'), 'utf-8');
+  const match   = envFile.match(/^API_PORT_BASE\s*=\s*(\d+)/m);
+  if (match) apiPortBase = parseInt(match[1], 10);
+} catch { /* .env 不存在也没关系 */ }
+
+// ── 生成 PM2 app 配置 ───────────────────────────────────────────────────────
+function makeApp(name, index) {
+  const apiPort    = apiPortBase + index;
+  const memoryPort = apiPortBase + 10 + index;
+  const dataRoot   = path.join(HOME, '.metabot', name);
   return {
-    name:        bot.name,
+    name,
     script:      'src/index.ts',
     interpreter: TSX,
     cwd:         ROOT,
 
-    // 配置代码改动后用 `metabot restart` 手动应用
     watch: false,
 
     autorestart:   true,
@@ -55,31 +59,26 @@ function makeApp(bot) {
     min_uptime:    '10s',
     restart_delay: 3000,
 
-    error_file: path.join(LOGS_DIR, `${bot.name}-error.log`),
-    out_file:   path.join(LOGS_DIR, `${bot.name}-out.log`),
+    error_file: path.join(LOGS_DIR, `${name}-error.log`),
+    out_file:   path.join(LOGS_DIR, `${name}-out.log`),
     merge_logs: true,
     log_date_format: 'YYYY-MM-DD HH:mm:ss',
 
     env: {
       NODE_ENV:            'production',
       BOTS_CONFIG:         'bots.json',
-      BOT_NAME:            bot.name,
-      API_PORT:            String(bot.apiPort),
-      MEMORY_PORT:         String(bot.memoryPort),
-      // 单 bot 进程私有数据目录，所有 db / json 落到这里
+      BOT_NAME:            name,
+      API_PORT:            String(apiPort),
+      MEMORY_PORT:         String(memoryPort),
       METABOT_DATA_DIR:    dataRoot,
-      // MetaMemory 的 SQLite 也放进 bot 私有目录（避免共享 ./data 写冲突）
       MEMORY_DATABASE_DIR: path.join(dataRoot, 'data'),
-      // metamemory 客户端要查的服务端 URL（指向自己进程的 memory port）
-      META_MEMORY_URL:     `http://localhost:${bot.memoryPort}`,
-      // 不限制 turn 数（沿用旧 metabot 配置）
+      META_MEMORY_URL:     `http://localhost:${memoryPort}`,
       CLAUDE_MAX_TURNS:    '',
-      // 卡片 schema：v2 全员启用（PA 灰度通过后切换全部）
-      CARD_SCHEMA_V2: 'true',
+      CARD_SCHEMA_V2:      'true',
     },
   };
 }
 
 module.exports = {
-  apps: BOTS.map(makeApp),
+  apps: botNames.map((name, i) => makeApp(name, i)),
 };
