@@ -61,13 +61,10 @@ const envFromFile = parseEnvFile(path.join(metabotDir, '.env'));
  * This is the reliable way to inject env vars into Claude Code subprocess.
  *
  * IMPORTANT: Only non-sensitive defaults are hardcoded here.
- * Sensitive values (ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL) should be
- * configured in .env file which is NOT tracked in git.
+ * Sensitive values (ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL) and model
+ * configurations should be set via .env file or environment variables.
  */
 const CLAUDE_ENV_OVERRIDE: Record<string, string> = {
-  ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5',
-  ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-5',
-  ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-4.7',
   CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '72',
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
 };
