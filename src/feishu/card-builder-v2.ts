@@ -293,20 +293,23 @@ export function buildCardV2(state: CardState): string {
       ? `${(state.durationMs / 1000).toFixed(1)}s`
       : '';
 
-    const statsParts: string[] = [];
+    // 第2行左侧：ctx 信息
+    const statsLeft: string[] = [];
     if (state.totalTokens && state.contextWindow) {
       const pct    = Math.round((state.totalTokens / state.contextWindow) * 100);
       const tokensK = state.totalTokens >= 1000 ? `${(state.totalTokens / 1000).toFixed(1)}k` : `${state.totalTokens}`;
       const ctxK    = `${Math.round(state.contextWindow / 1000)}k`;
-      statsParts.push(`ctx: ${tokensK}/${ctxK} (${pct}%)`);
+      statsLeft.push(`ctx: ${tokensK}/${ctxK} (${pct}%)`);
     }
+    // 第2行右侧：model 信息
+    let statsRight = '';
     if (state.status === 'complete' || state.status === 'error') {
-      if (state.sessionCostUsd != null) statsParts.push(`$${state.sessionCostUsd.toFixed(2)}`);
-      if (state.model) statsParts.push(state.model.replace(/^claude-/, ''));
+      // if (state.sessionCostUsd != null) statsLeft.push(`$${state.sessionCostUsd.toFixed(2)}`);
+      if (state.model) statsRight = state.model.replace(/^claude-/, '');
     }
 
     const hasFirstRow  = projectName || durationStr;
-    const hasSecondRow = statsParts.length > 0;
+    const hasSecondRow = statsLeft.length > 0 || statsRight;
 
     if (hasFirstRow || hasSecondRow) {
       const footerElements: unknown[] = [];
@@ -346,12 +349,38 @@ export function buildCardV2(state: CardState): string {
         });
       }
 
-      // 第2行：stats 靠左
+      // 第2行：ctx（左） + model（右）
       if (hasSecondRow) {
         footerElements.push({
-          tag: 'markdown',
-          content: `<font color="grey" size="${FOOTER_FONT_SIZE}">_${statsParts.join(' | ')}_</font>`,
-          text_align: 'left',
+          tag: 'column_set',
+          horizontal_spacing: '0px',
+          columns: [
+            ...(statsLeft.length > 0 ? [{
+              tag: 'column',
+              width: 'weighted',
+              weight: 1,
+              vertical_align: 'center',
+              elements: [
+                {
+                  tag: 'markdown',
+                  content: `<font color="grey" size="${FOOTER_FONT_SIZE}">_${statsLeft.join(' | ')}_</font>`,
+                  text_align: 'left',
+                },
+              ],
+            }] : []),
+            ...(statsRight ? [{
+              tag: 'column',
+              width: 'auto',
+              vertical_align: 'center',
+              elements: [
+                {
+                  tag: 'markdown',
+                  content: `<font color="grey" size="${FOOTER_FONT_SIZE}">_${statsRight}_</font>`,
+                  text_align: 'right',
+                },
+              ],
+            }] : []),
+          ],
         });
       }
 
