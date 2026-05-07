@@ -55,7 +55,7 @@ const HEADING_FONT_SIZE: Record<1 | 2 | 3 | 4 | 5 | 6, number> = {
 /** 正文字号：稍微比飞书 markdown 默认小一号，匹配主人发消息的字号 */
 const BODY_FONT_SIZE = 3;
 /** Footer 字号：最小，作为状态栏 */
-const FOOTER_FONT_SIZE = 2;
+const FOOTER_FONT_SIZE = 1;
 
 function blockToElement(block: Block): unknown {
   switch (block.type) {
