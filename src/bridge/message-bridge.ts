@@ -616,12 +616,13 @@ export class MessageBridge {
     const displayPrompt = hasMedia && mediaCount > 1
       ? `🖼️ [${mediaCount} files] ${text}`
       : fileKey ? '📎 ' + text : imageKey ? '🖼️ ' + text : text;
-    const processor = new StreamProcessor(displayPrompt);
+    const processor = new StreamProcessor(displayPrompt, cwd);
     const initialState: CardState = {
       status: 'thinking',
       userPrompt: displayPrompt,
       responseText: '',
       toolCalls: [],
+      workingDirectory: cwd,
     };
 
     const messageId = await this.sender.sendCard(chatId, initialState);
@@ -981,7 +982,7 @@ export class MessageBridge {
     const outputsDir = this.outputsManager.prepareDir(chatId);
 
     const displayPrompt = prompt;
-    const processor = new StreamProcessor(displayPrompt);
+    const processor = new StreamProcessor(displayPrompt, cwd);
     const rateLimiter = new RateLimiter(1500);
 
     const initialState: CardState = {
@@ -989,6 +990,7 @@ export class MessageBridge {
       userPrompt: displayPrompt,
       responseText: '',
       toolCalls: [],
+      workingDirectory: cwd,
     };
 
     let messageId: string | undefined;

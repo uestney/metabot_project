@@ -9,7 +9,7 @@
  *   - 代码块     → 独立 tag: 'code_block' 元素（带语法高亮 + 复制按钮）
  *   - 其他       → tag: 'markdown'（飞书已支持，保持原样）
  */
-import type { CardState, CardStatus } from '../types.js';
+import type { CardState, CardStatus, ToolCall } from '../types.js';
 import { parseMarkdownToBlocks, type Block } from './markdown-parser.js';
 
 const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: string }> = {
@@ -154,20 +154,93 @@ function responseToElements(text: string): unknown[] {
   return blocks.map(blockToElement);
 }
 
+/** Tool call 折叠阈值：超过此数量时聚合显示 */
+const TOOL_COLLAPSE_THRESHOLD = 5;
+
+/**
+ * 构建工具调用元素列表。
+ *
+ * ≤5 条：全部平铺（保持原样）
+ * >5 条：
+ *   - 正在运行的 tool call 保留完整详情（始终可见）
+ *   - 已完成的按 tool 类型聚合计数
+ *   - 整体包在 collapsible_panel 中，默认折叠
+ */
+function buildToolCallElements(toolCalls: ToolCall[]): unknown[] {
+  // 少量 tool call 直接平铺
+  if (toolCalls.length <= TOOL_COLLAPSE_THRESHOLD) {
+    const lines = toolCalls.map((t) => {
+      const icon = t.status === 'running' ? '⏳' : '✅';
+      return `${icon} **${t.name}** ${t.detail}`;
+    });
+    return [{ tag: 'markdown', content: lines.join('\n') }];
+  }
+
+  // 分离运行中 vs 已完成
+  const running  = toolCalls.filter((t) => t.status === 'running');
+  const done     = toolCalls.filter((t) => t.status !== 'running');
+
+  // 已完成的按 tool name 聚合计数
+  const counts = new Map<string, number>();
+  for (const t of done) {
+    counts.set(t.name, (counts.get(t.name) ?? 0) + 1);
+  }
+
+  // 构建聚合行：每种工具一行
+  const summaryLines: string[] = [];
+  for (const [name, count] of counts) {
+    summaryLines.push(`✅ **${name}** ×${count}`);
+  }
+
+  // 构建运行中行（保留详情）
+  const runningLines = running.map((t) => `⏳ **${t.name}** ${t.detail}`);
+
+  // 面板标题
+  const totalDone    = done.length;
+  const runningCount = running.length;
+  const titleParts   = [`🔧 ${toolCalls.length} tool calls`];
+  if (runningCount > 0) titleParts.push(`${runningCount} running`);
+
+  // 组装：运行中的始终可见 + 折叠面板包完成摘要
+  const result: unknown[] = [];
+
+  // 运行中的 tool call（如果有），始终显示在折叠面板外部
+  if (runningLines.length > 0) {
+    result.push({ tag: 'markdown', content: runningLines.join('\n') });
+  }
+
+  // 折叠面板：已完成摘要
+  const panelContent = summaryLines.length > 0
+    ? summaryLines.join('\n')
+    : '_No completed calls yet_';
+
+  result.push({
+    tag: 'collapsible_panel',
+    expanded: false,
+    header: {
+      title: {
+        tag:     'plain_text',
+        content: `── ${totalDone} steps completed ──`,
+      },
+    },
+    border: {
+      style: 'none',
+    },
+    elements: [
+      { tag: 'markdown', content: panelContent },
+    ],
+  });
+
+  return result;
+}
+
 export function buildCardV2(state: CardState): string {
   const config = STATUS_CONFIG[state.status];
   const elements: unknown[] = [];
 
-  // 工具调用列表
+  // 工具调用列表（>5 条时折叠聚合）
   if (state.toolCalls.length > 0) {
-    const toolLines = state.toolCalls.map((t) => {
-      const icon = t.status === 'running' ? '⏳' : '✅';
-      return `${icon} **${t.name}** ${t.detail}`;
-    });
-    elements.push({
-      tag: 'markdown',
-      content: toolLines.join('\n'),
-    });
+    elements.push(...buildToolCallElements(state.toolCalls));
     elements.push({ tag: 'hr' });
   }
 
@@ -209,25 +282,79 @@ export function buildCardV2(state: CardState): string {
     });
   }
 
-  // stats note
+  // stats footer: 两行布局
+  // 第1行：项目名（左） + 耗时（右），两列两端对齐
+  // 第2行：ctx / cost / model，靠左
   {
-    const parts: string[] = [];
+    const projectName = state.workingDirectory
+      ? state.workingDirectory.replace(/\/+$/, '').split('/').pop() || ''
+      : '';
+    const durationStr = state.durationMs !== undefined
+      ? `${(state.durationMs / 1000).toFixed(1)}s`
+      : '';
+
+    const statsParts: string[] = [];
     if (state.totalTokens && state.contextWindow) {
-      const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
+      const pct    = Math.round((state.totalTokens / state.contextWindow) * 100);
       const tokensK = state.totalTokens >= 1000 ? `${(state.totalTokens / 1000).toFixed(1)}k` : `${state.totalTokens}`;
-      const ctxK = `${Math.round(state.contextWindow / 1000)}k`;
-      parts.push(`ctx: ${tokensK}/${ctxK} (${pct}%)`);
+      const ctxK    = `${Math.round(state.contextWindow / 1000)}k`;
+      statsParts.push(`ctx: ${tokensK}/${ctxK} (${pct}%)`);
     }
     if (state.status === 'complete' || state.status === 'error') {
-      if (state.sessionCostUsd != null) parts.push(`$${state.sessionCostUsd.toFixed(2)}`);
-      if (state.model) parts.push(state.model.replace(/^claude-/, ''));
-      if (state.durationMs !== undefined) parts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
+      if (state.sessionCostUsd != null) statsParts.push(`$${state.sessionCostUsd.toFixed(2)}`);
+      if (state.model) statsParts.push(state.model.replace(/^claude-/, ''));
     }
-    if (parts.length > 0) {
-      // footer 风格：column_set 灰色背景 + 内边距 padding 让文字距背景边框留空
-      // - background_style: 'grey' 灰色底
-      // - margin top 跟正文留 12px 距离
-      // - column 上加 padding 让文字距右边 border 有 12px 内边距
+
+    const hasFirstRow  = projectName || durationStr;
+    const hasSecondRow = statsParts.length > 0;
+
+    if (hasFirstRow || hasSecondRow) {
+      const footerElements: unknown[] = [];
+
+      // 第1行：项目名（左） + 耗时（右）
+      if (hasFirstRow) {
+        footerElements.push({
+          tag: 'column_set',
+          horizontal_spacing: '0px',
+          columns: [
+            {
+              tag: 'column',
+              width: 'weighted',
+              weight: 1,
+              vertical_align: 'center',
+              elements: [
+                {
+                  tag: 'markdown',
+                  content: `<font color="grey" size="${FOOTER_FONT_SIZE}">_${projectName}_</font>`,
+                  text_align: 'left',
+                },
+              ],
+            },
+            ...(durationStr ? [{
+              tag: 'column',
+              width: 'auto',
+              vertical_align: 'center',
+              elements: [
+                {
+                  tag: 'markdown',
+                  content: `<font color="grey" size="${FOOTER_FONT_SIZE}">_${durationStr}_</font>`,
+                  text_align: 'right',
+                },
+              ],
+            }] : []),
+          ],
+        });
+      }
+
+      // 第2行：stats 靠左
+      if (hasSecondRow) {
+        footerElements.push({
+          tag: 'markdown',
+          content: `<font color="grey" size="${FOOTER_FONT_SIZE}">_${statsParts.join(' | ')}_</font>`,
+          text_align: 'left',
+        });
+      }
+
       elements.push({
         tag: 'column_set',
         background_style: 'grey',
@@ -240,13 +367,7 @@ export function buildCardV2(state: CardState): string {
             weight: 1,
             vertical_align: 'center',
             padding: '6px 12px 6px 12px',
-            elements: [
-              {
-                tag: 'markdown',
-                content: `<font color="grey" size="${FOOTER_FONT_SIZE}">_${parts.join(' | ')}_</font>`,
-                text_align: 'right',
-              },
-            ],
+            elements: footerElements,
           },
         ],
       });

@@ -35,6 +35,8 @@ export interface CardState {
   contextWindow?: number;
   /** Cumulative session cost (USD), accumulated across queries until /reset */
   sessionCostUsd?: number;
+  /** Working directory basename for display in card footer */
+  workingDirectory?: string;
 }
 
 export interface IncomingMessage {
