@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import * as lark from '@larksuiteoapi/node-sdk';
 import { loadAppConfig, type BotConfig } from './config.js';
@@ -288,6 +290,67 @@ async function main() {
     memoryAuthToken: appConfig.memory.adminToken || appConfig.memory.readerToken || appConfig.memory.secret || undefined,
     sessionRegistry,
   });
+
+  // ─── Pending-switch: detect project switch and inject sessionId/history ─────
+  // After all bots are registered, check if there's a pending-switch.json
+  // written by 01-switch-bot.sh or /api/bots/:name/switch endpoint before restart.
+  {
+    const botName = process.env.BOT_NAME;
+    if (botName) {
+      const dataDir = process.env.METABOT_DATA_DIR || path.join(os.homedir(), '.metabot', botName);
+      const pendingSwitchPath = path.join(dataDir, 'pending-switch.json');
+      if (fs.existsSync(pendingSwitchPath)) {
+        try {
+          const switchData = JSON.parse(fs.readFileSync(pendingSwitchPath, 'utf-8'));
+          const { chatId, workDir, sessionId, recentHistory } = switchData as {
+            chatId?:        string;
+            workDir?:       string;
+            sessionId?:     string;
+            recentHistory?: Array<{ role: string; content: string }>;
+          };
+          logger.info({ botName, chatId, workDir, sessionId }, 'Processing pending project switch');
+
+          const bot = registry.get(botName);
+          if (bot) {
+            if (chatId && sessionId) {
+              // chatId known — inject sessionId immediately
+              bot.bridge.getSessionManager().setSessionId(chatId, sessionId, 'claude');
+              logger.info({ botName, chatId, sessionId: sessionId.slice(0, 8) }, 'Injected sessionId from pending switch');
+
+              if (recentHistory && recentHistory.length > 0) {
+                const lines: string[] = [
+                  `**项目已切换** → \`${workDir}\``,
+                  `Session: \`${sessionId.slice(0, 8)}...\`\n`,
+                  '**最近对话历史：**',
+                  '---',
+                ];
+                for (const msg of recentHistory) {
+                  const prefix = msg.role === 'user' ? '👤 **用户**' : '🤖 **助手**';
+                  const text   = msg.content.length > 300
+                    ? msg.content.slice(0, 300) + '...'
+                    : msg.content;
+                  lines.push(`${prefix}：${text}\n`);
+                }
+                bot.sender.sendTextNotice(chatId, '项目切换完成', lines.join('\n'), 'green')
+                  .catch((err: any) => logger.warn({ err: err?.message, botName }, 'Failed to push switch history'));
+                logger.info({ botName, chatId, historyLen: recentHistory.length }, 'Switch history pushed');
+              }
+            } else {
+              // chatId unknown — defer to first incoming message
+              bot.bridge.pendingSwitchNotice = { workDir, sessionId, recentHistory };
+              logger.info({ botName, sessionId: sessionId?.slice(0, 8), historyLen: recentHistory?.length || 0 }, 'Switch notice deferred to first message');
+            }
+          }
+
+          fs.unlinkSync(pendingSwitchPath);
+          logger.info({ botName }, 'Pending switch processed and cleaned up');
+        } catch (err: any) {
+          logger.warn({ err: err?.message, botName }, 'Failed to process pending switch');
+          try { fs.unlinkSync(pendingSwitchPath); } catch { /* ignore */ }
+        }
+      }
+    }
+  }
 
   // Graceful shutdown
   const shutdown = () => {
