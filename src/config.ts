@@ -495,6 +495,18 @@ export function loadAppConfig(): AppConfig {
     }
   }
 
+  // Per-bot process model: when BOT_NAME is set, filter to only that bot across all platforms
+  const botNameFilter = process.env.BOT_NAME;
+  if (botNameFilter) {
+    feishuBots   = feishuBots.filter((b) => b.name === botNameFilter);
+    telegramBots = telegramBots.filter((b) => b.name === botNameFilter);
+    webBots      = webBots.filter((b) => b.name === botNameFilter);
+    wechatBots   = wechatBots.filter((b) => b.name === botNameFilter);
+    if (feishuBots.length === 0 && telegramBots.length === 0 && webBots.length === 0 && wechatBots.length === 0) {
+      throw new Error(`BOT_NAME=${botNameFilter} did not match any bot in config`);
+    }
+  }
+
   const memoryServerUrl = (process.env.META_MEMORY_URL || process.env.MEMORY_SERVER_URL || 'http://localhost:8100').replace(/\/+$/, '');
 
   const apiPort = process.env.API_PORT ? parseInt(process.env.API_PORT, 10) : 9100;
