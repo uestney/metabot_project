@@ -113,6 +113,11 @@ export class MessageBridge {
   private pendingBatches = new Map<string, PendingBatch>(); // media debounce batches
   /** Callback for activity lifecycle events (task started/completed/failed). */
   onActivityEvent?: (event: ActivityEventData) => void;
+  /** Pending project-switch notice. Set by index.ts when pending-switch.json
+   *  is found at startup and chatId is unknown. Consumed on the first incoming
+   *  message: sessionId injected into sessionManager so Claude can resume,
+   *  recentHistory pushed as a notice card to the user. */
+  pendingSwitchNotice?: { workDir?: string; sessionId?: string; recentHistory?: Array<{ role: string; content: string }> };
 
   constructor(
     private config: BotConfigBase,
@@ -305,6 +310,35 @@ export class MessageBridge {
 
   async handleMessage(msg: IncomingMessage): Promise<void> {
     const { chatId, text } = msg;
+
+    // If there's a deferred switch notice (chatId was unknown at startup), handle it now
+    if (this.pendingSwitchNotice) {
+      const { workDir, sessionId, recentHistory } = this.pendingSwitchNotice;
+      this.pendingSwitchNotice = undefined;
+
+      // Inject sessionId into sessionManager so Claude inherits the session
+      if (sessionId) {
+        this.sessionManager.setSessionId(chatId, sessionId, 'claude');
+        this.logger.info({ chatId, sessionId: sessionId.slice(0, 8) }, 'Injected sessionId from pending switch');
+      }
+
+      if (recentHistory && recentHistory.length > 0) {
+        const lines: string[] = [
+          `**项目已切换** → \`${workDir}\``,
+          sessionId ? `Session: \`${sessionId.slice(0, 8)}...\`\n` : '\n',
+          '**最近对话历史：**',
+          '---',
+        ];
+        for (const h of recentHistory) {
+          const prefix = h.role === 'user' ? '👤 **用户**' : '🤖 **助手**';
+          const t      = h.content.length > 300 ? h.content.slice(0, 300) + '...' : h.content;
+          lines.push(`${prefix}：${t}\n`);
+        }
+        this.sender.sendTextNotice(chatId, '项目切换完成', lines.join('\n'), 'green')
+          .catch((err: any) => this.logger.warn({ err: err?.message }, 'Failed to push deferred switch notice'));
+        this.logger.info({ chatId, historyLen: recentHistory.length }, 'Deferred switch notice pushed');
+      }
+    }
 
     // Handle commands (always allowed, even during pending questions)
     if (text.startsWith('/')) {
