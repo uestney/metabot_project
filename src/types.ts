@@ -6,6 +6,8 @@ export interface ToolCall {
   name: string;
   detail: string;
   status: 'running' | 'done';
+  /** Whether this tool call is from the main agent or a sub-agent */
+  level: 'main' | 'sub';
 }
 
 export interface PendingQuestion {
@@ -47,6 +49,8 @@ export interface CardState {
   sessionCostUsd?: number;
   /** Background tasks (e.g. Monitor) the agent has spawned during this turn. */
   backgroundEvents?: BackgroundEvent[];
+  /** Working directory basename for display in card footer */
+  workingDirectory?: string;
 }
 
 export interface IncomingMessage {
