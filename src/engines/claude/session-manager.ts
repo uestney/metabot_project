@@ -56,8 +56,13 @@ export class SessionManager {
     private logger: Logger,
     botName: string = 'default',
   ) {
-    // Persist sessions to a file under the project data dir
+    // Persist sessions to a file under the project data dir.
+    // METABOT_DATA_DIR allows per-bot data isolation when running multiple bots
+    // as separate processes (e.g. via PM2 with a per-bot ecosystem entry that
+    // sets METABOT_DATA_DIR=~/.metabot/<bot-name>/). Each bot gets its own
+    // sessions-<bot>.json without filename collision.
     const dataDir = process.env.SESSION_STORE_DIR
+      || process.env.METABOT_DATA_DIR
       || path.join(os.homedir(), '.metabot');
     fs.mkdirSync(dataDir, { recursive: true });
     this.persistPath = path.join(dataDir, `sessions-${botName}.json`);
