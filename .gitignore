@@ -13,3 +13,15 @@ ios/MetaBot/.swiftpm/
 ios/MetaBot/Pods/
 ios/MetaBot/MetaBot.xcworkspace/xcuserdata/
 ios/AuthKey*.p8
+_backup_dev/
+private/
+.claude/
+.claude_docs/
+.claude_logs/
+.mcp.json
+temp/
+bots.md
+test-feishu.mjs
+tools/feishu-bot-automation/state.json
+tools/feishu-bot-automation/screenshots/
+tools/feishu-bot-automation/*-results.json
