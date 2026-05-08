@@ -54,7 +54,7 @@ describe('Codex JSONL translator', () => {
     expect(processor.getSessionId()).toBe('019dbe98-98b1-78b1-a6b0-b422e495db52');
     expect(cardState.status).toBe('complete');
     expect(cardState.responseText).toBe('DONE');
-    expect(cardState.toolCalls).toEqual([{ name: 'Bash', detail: '`/bin/zsh -lc pwd`', status: 'done' }]);
+    expect(cardState.toolCalls).toEqual([{ name: 'Bash', detail: '`/bin/zsh -lc pwd`', status: 'done', level: 'main' }]);
     expect(cardState.model).toBe('gpt-5.4-codex');
     expect(cardState.totalTokens).toBe(23181);
     expect(cardState.contextWindow).toBe(400000);

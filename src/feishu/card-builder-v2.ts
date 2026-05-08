@@ -16,7 +16,7 @@
  *   - tag: 'code' / 'code_block': 400 error
  *   - tag: 'note': deprecated in v2
  */
-import type { CardState, CardStatus } from '../types.js';
+import type { CardState, CardStatus, ToolCall } from '../types.js';
 import { parseMarkdownToBlocks, type Block } from './markdown-parser.js';
 
 const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: string }> = {
@@ -35,7 +35,69 @@ const BG_ICON: Record<'running' | 'completed' | 'failed' | 'stopped', string> = 
 };
 
 const MAX_CONTENT_LENGTH = 28000;
-const FOOTER_FONT_SIZE   = 2;
+
+/** Tool call 折叠阈值：超过此数量时聚合显示 */
+const TOOL_COLLAPSE_THRESHOLD = 5;
+
+/**
+ * 构建工具调用元素列表。
+ * ≤5 条且无子 agent：全部平铺
+ * >5 条或有子 agent：聚合摘要（主/子分开）+ 代码段详情
+ */
+function buildToolCallElements(toolCalls: ToolCall[]): unknown[] {
+  const mainCalls = toolCalls.filter((t) => t.level === 'main');
+  const subCalls  = toolCalls.filter((t) => t.level === 'sub');
+  const hasSub    = subCalls.length > 0;
+
+  if (toolCalls.length <= TOOL_COLLAPSE_THRESHOLD && !hasSub) {
+    const lines = toolCalls.map((t) => {
+      const icon = t.status === 'running' ? '⏳' : '✅';
+      return `${icon} **${t.name}** ${t.detail}`;
+    });
+    return [{ tag: 'markdown', content: lines.join('\n') }];
+  }
+
+  const result: unknown[] = [];
+
+  const aggregate = (calls: ToolCall[]) => {
+    const counts = new Map<string, { done: number; running: number }>();
+    for (const t of calls) {
+      const entry = counts.get(t.name) ?? { done: 0, running: 0 };
+      if (t.status === 'running') entry.running++;
+      else entry.done++;
+      counts.set(t.name, entry);
+    }
+    const lines: string[] = [];
+    for (const [name, c] of counts) {
+      const total = c.done + c.running;
+      const icon  = c.running > 0 ? '⏳' : '✅';
+      lines.push(`${icon} **${name}** ×${total}`);
+    }
+    return lines;
+  };
+
+  result.push({ tag: 'markdown', content: aggregate(mainCalls).join('\n') });
+
+  if (hasSub) {
+    const subSummary = aggregate(subCalls);
+    result.push({
+      tag: 'markdown',
+      content: `── sub-agent (${subCalls.length} calls) ──\n${subSummary.join('\n')}`,
+    });
+  }
+
+  const detailLines = toolCalls.map((t) => {
+    const tag  = t.level === 'main' ? '[main]' : '[sub-]';
+    const icon = t.status === 'running' ? '...' : 'done';
+    return `${tag} ${icon} ${t.name} ${t.detail}`;
+  });
+  result.push({
+    tag: 'markdown',
+    content: '```\n' + detailLines.join('\n') + '\n```',
+  });
+
+  return result;
+}
 
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -117,16 +179,9 @@ export function buildCardV2(state: CardState): string {
   const config   = STATUS_CONFIG[state.status];
   const elements: unknown[] = [];
 
-  // Tool calls section
+  // Tool calls section (折叠聚合，区分主/子 agent)
   if (state.toolCalls.length > 0) {
-    const toolLines = state.toolCalls.map((t) => {
-      const icon = t.status === 'running' ? '⏳' : '✅';
-      return `${icon} **${t.name}** ${t.detail}`;
-    });
-    elements.push({
-      tag:     'markdown',
-      content: toolLines.join('\n'),
-    });
+    elements.push(...buildToolCallElements(state.toolCalls));
     elements.push({ tag: 'hr' });
   }
 
@@ -202,27 +257,43 @@ export function buildCardV2(state: CardState): string {
     });
   }
 
-  // Stats footer — grey background panel
+  // stats footer: body 内全宽灰色面板
   {
-    const parts: string[] = [];
+    const projectName = state.workingDirectory
+      ? state.workingDirectory.replace(/\/+$/, '').split('/').pop() || ''
+      : '';
+    const durationStr = state.durationMs !== undefined
+      ? `${(state.durationMs / 1000).toFixed(1)}s`
+      : '';
+
+    const statsItems: string[] = [];
     if (state.totalTokens && state.contextWindow) {
-      const pct    = Math.round((state.totalTokens / state.contextWindow) * 100);
-      const tokensK = state.totalTokens >= 1000
-        ? `${(state.totalTokens / 1000).toFixed(1)}k`
-        : `${state.totalTokens}`;
-      const ctxK = `${Math.round(state.contextWindow / 1000)}k`;
-      parts.push(`ctx: ${tokensK}/${ctxK} (${pct}%)`);
+      const pct     = Math.round((state.totalTokens / state.contextWindow) * 100);
+      const tokensK = state.totalTokens >= 1000 ? `${(state.totalTokens / 1000).toFixed(1)}k` : `${state.totalTokens}`;
+      const ctxK    = `${Math.round(state.contextWindow / 1000)}k`;
+      statsItems.push(`ctx: ${tokensK}/${ctxK} (${pct}%)`);
     }
     if (state.status === 'complete' || state.status === 'error') {
-      if (state.sessionCostUsd != null) parts.push(`$${state.sessionCostUsd.toFixed(2)}`);
-      if (state.model) parts.push(state.model.replace(/^claude-/, ''));
-      if (state.durationMs !== undefined) parts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
+      // if (state.sessionCostUsd != null) statsItems.push(`$${state.sessionCostUsd.toFixed(2)}`);
+      if (state.model) statsItems.push(state.model.replace(/^claude-/, ''));
     }
-    if (parts.length > 0) {
+
+    const hasFirstRow  = projectName || durationStr;
+    const hasSecondRow = statsItems.length > 0;
+
+    if (hasFirstRow || hasSecondRow) {
+      const footerContent: string[] = [];
+      if (hasFirstRow) {
+        footerContent.push([projectName, durationStr].filter(Boolean).join(' · '));
+      }
+      if (hasSecondRow) {
+        footerContent.push(statsItems.join(' | '));
+      }
+
       elements.push({
-        tag:               'column_set',
-        background_style:  'grey',
-        margin:            '12px 0px 0px 0px',
+        tag:                'column_set',
+        background_style:   'grey',
+        margin:             '12px 0px 0px 0px',
         horizontal_spacing: '0px',
         columns: [
           {
@@ -230,12 +301,13 @@ export function buildCardV2(state: CardState): string {
             width:          'weighted',
             weight:         1,
             vertical_align: 'center',
-            padding:        '6px 12px 6px 12px',
+            padding:        '4px 12px 4px 12px',
             elements: [
               {
-                tag:        'markdown',
-                content:    `<font color="grey" size="${FOOTER_FONT_SIZE}">_${parts.join(' | ')}_</font>`,
-                text_align: 'right',
+                tag:       'markdown',
+                content:   footerContent.join('\n'),
+                text_size: 'notation',
+                text_align: 'left',
               },
             ],
           },

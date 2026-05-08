@@ -33,6 +33,8 @@ export class StreamProcessor {
   private _pendingQuestions: PendingQuestion[] = [];
   private _sdkHandledTools: DetectedTool[] = [];
   private _planFilePath: string | null = null;
+  /** Track tool_use IDs already added from stream_event to avoid duplicates in assistant message */
+  private _seenToolUseIds = new Set<string>();
   private _model: string | undefined;
   private _totalTokens: number | undefined;
   private _contextWindow: number | undefined;
@@ -42,7 +44,7 @@ export class StreamProcessor {
   // Live background tasks (Monitor, etc.) — task_id → latest rollup.
   private _backgroundEvents: Map<string, BackgroundEvent> = new Map();
 
-  constructor(private userPrompt: string) {}
+  constructor(private userPrompt: string, private _workingDirectory?: string) {}
 
   processMessage(message: SDKMessage): CardState {
     // Capture session_id from any message
@@ -98,6 +100,7 @@ export class StreamProcessor {
       backgroundEvents: this._backgroundEvents.size > 0
         ? [...this._backgroundEvents.values()]
         : undefined,
+      workingDirectory: this._workingDirectory,
     };
   }
 
@@ -179,7 +182,19 @@ export class StreamProcessor {
           this.responseText = block.text;
         }
       } else if (block.type === 'tool_use' && block.name) {
-        this.addToolCall(block.name, block.input);
+        const level = (message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined) ? 'sub' : 'main';
+        if (block.id && this._seenToolUseIds.has(block.id)) {
+          // Already added from stream_event — update detail only (input is now available)
+          for (let i = this.toolCalls.length - 1; i >= 0; i--) {
+            if (this.toolCalls[i].name === block.name && this.toolCalls[i].status === 'running') {
+              this.toolCalls[i].detail = formatToolDetail(block.name, block.input);
+              break;
+            }
+          }
+          this.trackSpecialPaths(block.name, block.input);
+        } else {
+          this.addToolCall(block.name, block.input, level);
+        }
         // Detect interactive tools at top level
         if (message.parent_tool_use_id === null || message.parent_tool_use_id === undefined) {
           if (block.name === 'AskUserQuestion' && block.id && block.input) {
@@ -214,22 +229,20 @@ export class StreamProcessor {
       }
     }
 
-    // Only process top-level stream events for content
-    if (message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined) {
-      return;
-    }
+    const isSubAgent = message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined;
 
     if (event.type === 'content_block_start') {
       const block = event.content_block;
       if (block?.type === 'tool_use' && block.name) {
-        this.addToolCall(block.name, undefined);
+        if (block.id) this._seenToolUseIds.add(block.id);
+        this.addToolCall(block.name, undefined, isSubAgent ? 'sub' : 'main');
       }
       if (block?.type === 'text') {
         // Reset for new text block
       }
     } else if (event.type === 'content_block_delta') {
       const delta = event.delta;
-      if (delta?.type === 'text_delta' && delta.text) {
+      if (!isSubAgent && delta?.type === 'text_delta' && delta.text) {
         this.responseText += delta.text;
       }
     } else if (event.type === 'content_block_stop') {
@@ -294,18 +307,23 @@ export class StreamProcessor {
       backgroundEvents: this._backgroundEvents.size > 0
         ? [...this._backgroundEvents.values()]
         : undefined,
+      workingDirectory: this._workingDirectory,
     };
   }
 
-  private addToolCall(name: string, input: unknown): void {
+  private addToolCall(name: string, input: unknown, level: 'main' | 'sub' = 'main'): void {
     // Complete previous tool
     this.completeCurrentTool();
 
     this.currentToolName = name;
     const detail = formatToolDetail(name, input);
-    this.toolCalls.push({ name, detail, status: 'running' });
+    this.toolCalls.push({ name, detail, status: 'running', level });
 
-    // Track image file paths and plan file paths from Write tool
+    this.trackSpecialPaths(name, input);
+  }
+
+  /** Track image file paths and plan file paths from Write tool */
+  private trackSpecialPaths(name: string, input: unknown): void {
     if (name === 'Write' && input && typeof input === 'object') {
       const filePath = (input as Record<string, unknown>).file_path as string;
       if (filePath && isImagePath(filePath)) {
@@ -394,6 +412,7 @@ export class StreamProcessor {
       backgroundEvents: this._backgroundEvents.size > 0
         ? [...this._backgroundEvents.values()]
         : undefined,
+      workingDirectory: this._workingDirectory,
     };
   }
 
