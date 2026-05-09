@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -31,23 +31,14 @@ describe('OutputsManager', () => {
       expect(dir).toBe(path.join(tmpDir, 'chat-123'));
     });
 
-    it('keeps recent files in existing directory', () => {
+    it('wipes existing files from the directory', () => {
       const dir = manager.prepareDir('chat-123');
-      fs.writeFileSync(path.join(dir, 'recent.txt'), 'recent content');
+      fs.writeFileSync(path.join(dir, 'leftover.txt'), 'leftover content');
       const dir2 = manager.prepareDir('chat-123');
-      // Recent files should be preserved (within retention window)
-      expect(fs.readdirSync(dir2)).toContain('recent.txt');
-    });
-
-    it('removes old files beyond retention window', () => {
-      const dir = manager.prepareDir('chat-123');
-      const filePath = path.join(dir, 'old.txt');
-      fs.writeFileSync(filePath, 'old content');
-      // Backdate the file to 10 minutes ago
-      const oldTime = new Date(Date.now() - 10 * 60 * 1000);
-      fs.utimesSync(filePath, oldTime, oldTime);
-      const dir2 = manager.prepareDir('chat-123');
-      expect(fs.readdirSync(dir2)).not.toContain('old.txt');
+      // Stale files from previous tasks must be wiped so scanOutputs() at the
+      // end of this task only sees newly produced files.
+      expect(fs.readdirSync(dir2)).not.toContain('leftover.txt');
+      expect(fs.readdirSync(dir2)).toHaveLength(0);
     });
   });
 
@@ -107,17 +98,11 @@ describe('OutputsManager', () => {
   });
 
   describe('cleanup', () => {
-    it('schedules deferred removal of the outputs directory', () => {
-      vi.useFakeTimers();
+    it('removes the outputs directory immediately', () => {
       const dir = manager.prepareDir('chat-1');
       fs.writeFileSync(path.join(dir, 'file.txt'), 'data');
       manager.cleanup(dir);
-      // Directory still exists immediately after cleanup call
-      expect(fs.existsSync(dir)).toBe(true);
-      // Fast-forward past the retention window (5 min)
-      vi.advanceTimersByTime(5 * 60 * 1000 + 100);
       expect(fs.existsSync(dir)).toBe(false);
-      vi.useRealTimers();
     });
 
     it('handles non-existent directory gracefully', () => {
