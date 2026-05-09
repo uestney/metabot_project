@@ -1,17 +1,13 @@
 /**
  * Cross-platform session registry — file-backed.
  *
- * Replaces the previous SQLite (sessions.db) implementation. The Claude Code
- * Agent SDK already persists every conversation as JSONL on disk at
- *   ~/.claude/projects/<sanitized-cwd>/<sessionId>.jsonl
- * and `~/.metabot[/<bot>]/sessions-<bot>.json` already maps `chatId →
- * claudeSessionId`. The old DB just mirrored these two sources, so we read
- * directly from them instead.
+ * Reads directly from two on-disk sources of truth:
+ *   - Claude Code Agent SDK JSONL transcripts at
+ *     ~/.claude/projects/<sanitized-cwd>/<sessionId>.jsonl
+ *   - Per-bot chatId → claudeSessionId map at
+ *     ~/.metabot[/<bot>]/sessions-<bot>.json
  *
- * The exported class shape is unchanged so existing consumers
- * (web ws-server, http session-routes, message-bridge.recordSession) keep
- * working without edits. Internally `id === chatId` — there is no separate
- * UUID indirection any more.
+ * Internally `id === chatId` — no separate UUID indirection.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -91,10 +87,10 @@ export class SessionRegistry {
   }
 
   /**
-   * On first run after the SQLite → file migration, surface existing chat
-   * sessions in the web UI by reading every `sessions-<bot>.json` map
-   * SessionManager already persists. We only fill in entries that are not
-   * already in our meta map, so re-runs are idempotent.
+   * Surface existing chat sessions in the web UI by reading every
+   * `sessions-<bot>.json` map that SessionManager already persists. We only
+   * fill in entries that are not already in our meta map, so re-runs are
+   * idempotent.
    */
   private bootstrapFromSessionMaps(dataDir: string): void {
     try {

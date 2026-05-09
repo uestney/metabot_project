@@ -62,11 +62,11 @@
 #   ./01-switch-bot.sh SF /home/user/workspace/another-project
 #
 # 步骤:
-#   1. 验证参数（bot 名称、目标目录是否存在）
+#   1. pm2 delete <bot>（先停旧进程，避免 SIGTERM 时把旧 session 写回磁盘）
 #   2. 修改 bots.json 中对应 bot 的 defaultWorkingDirectory
-#   3. 清空 sessions-<bot>.json 和 sessions.db
+#   3. 清空 sessions-<bot>.json + 删除 sessions-meta.json
 #   4. 如有 sessionId，从 ~/.claude/projects/ 提取最近对话写入 pending-switch.json
-#   5. pm2 delete + pm2 start ecosystem.config.cjs --only <bot>
+#   5. pm2 start ecosystem.config.cjs --only <bot>
 #   6. 验证启动日志
 # ============================================================================
 
@@ -104,7 +104,7 @@ BOTS_JSON="$SCRIPT_DIR/bots.json"
 ECOSYSTEM="$SCRIPT_DIR/ecosystem.config.cjs"
 DATA_DIR="$HOME/.metabot/$BOT_NAME"
 SESSIONS_JSON="$DATA_DIR/sessions-${BOT_NAME}.json"
-SESSIONS_DB="$DATA_DIR/sessions.db"
+SESSIONS_META="$DATA_DIR/sessions-meta.json"
 PENDING_SWITCH="$DATA_DIR/pending-switch.json"
 
 # ── 前置检查 ──────────────────────────────────────────────────────────────────
@@ -128,8 +128,14 @@ info "目标目录: $WORK_DIR"
 [[ -n "$SESSION_ID" ]] && info "Session:  $SESSION_ID"
 echo ""
 
-# ── Step 1: 修改 bots.json ───────────────────────────────────────────────────
-info "Step 1/5: 更新 bots.json ..."
+# ── Step 1: 先停掉旧进程，避免 SIGTERM 时写回内存里的旧 session 覆盖我们的清空 ──
+info "Step 1/6: 停止旧 PA 进程（避免 SIGTERM 写回旧 session）..."
+pm2 delete "$BOT_NAME" 2>/dev/null || true
+sleep 1
+ok "旧进程已停"
+
+# ── Step 2: 修改 bots.json ───────────────────────────────────────────────────
+info "Step 2/6: 更新 bots.json ..."
 python3 -c "
 import json
 with open('$BOTS_JSON', 'r') as f:
@@ -144,14 +150,14 @@ with open('$BOTS_JSON', 'w') as f:
 "
 ok "bots.json 已更新"
 
-# ── Step 2: 清空 session 存储 ────────────────────────────────────────────────
-info "Step 2/5: 清空 session 存储 ..."
+# ── Step 3: 清空 session 存储 ────────────────────────────────────────────────
+info "Step 3/6: 清空 session 存储 ..."
 echo '{}' > "$SESSIONS_JSON"
-rm -f "$SESSIONS_DB" "${SESSIONS_DB}-shm" "${SESSIONS_DB}-wal"
-ok "sessions-${BOT_NAME}.json + sessions.db 已清空"
+[[ -f "$SESSIONS_META" ]] && rm -f "$SESSIONS_META"
+ok "sessions-${BOT_NAME}.json 已清空 (sessions-meta.json 已删除)"
 
-# ── Step 3: 写入 pending-switch.json ─────────────────────────────────────────
-info "Step 3/5: 生成 pending-switch.json ..."
+# ── Step 4: 写入 pending-switch.json ─────────────────────────────────────────
+info "Step 4/6: 生成 pending-switch.json ..."
 
 RECENT_HISTORY="[]"
 if [[ -n "$SESSION_ID" ]]; then
@@ -209,14 +215,13 @@ cat > "$PENDING_SWITCH" << ENDJSON
 ENDJSON
 ok "pending-switch.json 已生成"
 
-# ── Step 4: PM2 重启 ─────────────────────────────────────────────────────────
-info "Step 4/5: PM2 重启 $BOT_NAME ..."
-pm2 delete "$BOT_NAME" 2>/dev/null || true
+# ── Step 5: PM2 启动 ─────────────────────────────────────────────────────────
+info "Step 5/6: PM2 启动 $BOT_NAME ..."
 pm2 start "$ECOSYSTEM" --only "$BOT_NAME" --silent
-ok "PM2 已重启"
+ok "PM2 已启动"
 
-# ── Step 5: 验证启动 ─────────────────────────────────────────────────────────
-info "Step 5/5: 等待启动并验证 ..."
+# ── Step 6: 验证启动 ─────────────────────────────────────────────────────────
+info "Step 6/6: 等待启动并验证 ..."
 sleep 3
 
 # 检查进程是否存活
