@@ -328,6 +328,14 @@ async function main() {
 
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+
+  // Windows: PM2 sends 'shutdown' message instead of SIGTERM
+  process.on('message', (msg: any) => {
+    if (msg === 'shutdown') {
+      logger.info('Received PM2 shutdown message');
+      shutdown();
+    }
+  });
 }
 
 async function startBotsSafely<TConfig extends BotConfigBase, THandle>(
