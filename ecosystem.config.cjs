@@ -23,10 +23,10 @@ const LOGS_DIR = path.join(ROOT, 'logs');
 
 // ── 从 bots.json 读取 bot 列表 ──────────────────────────────────────────────
 const BOTS_CONFIG_PATH = path.join(ROOT, 'bots.json');
-let botNames = [];
+let bots = [];
 try {
   const data = JSON.parse(fs.readFileSync(BOTS_CONFIG_PATH, 'utf-8'));
-  botNames = (data.feishuBots || []).map(b => b.name);
+  bots = (data.feishuBots || []);
 } catch (err) {
   console.error(`[ecosystem] Failed to read ${BOTS_CONFIG_PATH}: ${err.message}`);
   process.exit(1);
@@ -41,10 +41,23 @@ try {
 } catch { /* .env 不存在也没关系 */ }
 
 // ── 生成 PM2 app 配置 ───────────────────────────────────────────────────────
-function makeApp(name, index) {
+function makeApp(bot, index) {
+  const { name } = bot;
   const apiPort    = apiPortBase + index * 3;
   const memoryPort = apiPortBase + index * 3 + 1;
   const dataRoot   = path.join(HOME, '.metabot', name);
+
+  // Per-bot env injection (`env: { ... }` in bots.json) — same pattern as
+  // Codex's `codex.env`. Lets a bot use a third-party Anthropic-compatible
+  // proxy by setting ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN/ANTHROPIC_API_KEY.
+  // Auto-injects METABOT_PREFER_ENV_AUTH=true when an Anthropic auth env is
+  // present, so the executor bypasses its default filter that strips these
+  // vars when ~/.claude/.credentials.json exists. User does not have to set
+  // the flag manually.
+  const customEnv = bot.env || {};
+  const hasAnthropicAuth = !!(customEnv.ANTHROPIC_AUTH_TOKEN || customEnv.ANTHROPIC_API_KEY);
+  const autoFlags = hasAnthropicAuth ? { METABOT_PREFER_ENV_AUTH: 'true' } : {};
+
   return {
     name,
     script:           'src/index.ts',
@@ -78,10 +91,12 @@ function makeApp(name, index) {
       META_MEMORY_URL:     `http://localhost:${memoryPort}`,
       CLAUDE_MAX_TURNS:    '',
       CARD_SCHEMA_V2:      'true',
+      ...customEnv,
+      ...autoFlags,
     },
   };
 }
 
 module.exports = {
-  apps: botNames.map((name, i) => makeApp(name, i)),
+  apps: bots.map((bot, i) => makeApp(bot, i)),
 };
