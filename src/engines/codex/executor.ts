@@ -236,9 +236,9 @@ export class CodexExecutor {
 
     if (child) {
       if (abortController.signal.aborted) {
-        child.kill('SIGTERM');
+        child.kill();
       } else {
-        abortController.signal.addEventListener('abort', () => child?.kill('SIGTERM'), { once: true });
+        abortController.signal.addEventListener('abort', () => child?.kill(), { once: true });
       }
 
       child.stdout?.on('data', processStdout);
@@ -277,7 +277,7 @@ export class CodexExecutor {
         this.logger.warn({ engine: 'codex' }, 'resolveQuestion called on Codex executor — not implemented');
       },
       finish: () => {
-        if (child && !child.killed) child.kill('SIGTERM');
+        if (child && !child.killed) child.kill();
         queue.finish();
       },
     };

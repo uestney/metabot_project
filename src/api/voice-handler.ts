@@ -321,7 +321,7 @@ export async function doubaoTTS(text: string, speaker: string): Promise<Buffer> 
 
 export async function edgeTTS(text: string, voice: string): Promise<Buffer> {
   const { EdgeTTS } = await import('node-edge-tts');
-  const tmpFile = `/tmp/mb-edge-tts-${Date.now()}.mp3`;
+  const tmpFile = path.join(os.tmpdir(), `mb-edge-tts-${Date.now()}.mp3`);
   const tts = new EdgeTTS({ voice: voice || 'zh-CN-XiaoyiNeural', lang: 'zh-CN' });
   await tts.ttsPromise(text, tmpFile);
   const buf = await fsp.readFile(tmpFile);

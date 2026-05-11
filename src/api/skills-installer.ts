@@ -182,17 +182,21 @@ function copyInstructionFile(src: string, dest: string, fileName: string, logger
 
 /** Locate the lark-cli executable. */
 function findLarkCli(): string | null {
+  const isWindows = process.platform === 'win32';
   const candidates = [
-    path.join(os.homedir(), '.npm-global', 'bin', 'lark-cli'),
-    '/usr/local/bin/lark-cli',
+    path.join(os.homedir(), '.npm-global', 'bin', isWindows ? 'lark-cli.cmd' : 'lark-cli'),
+    isWindows
+      ? path.join(process.env.APPDATA || '', 'npm', 'lark-cli.cmd')
+      : '/usr/local/bin/lark-cli',
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
   }
-  // Try PATH via which
+  // Try PATH via where (Windows) or which (Unix)
   try {
-    const result = execFileSync('which', ['lark-cli'], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 5_000 });
-    const p = result.toString().trim();
+    const cmd = isWindows ? 'where' : 'which';
+    const result = execFileSync(cmd, ['lark-cli'], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 5_000 });
+    const p = result.toString().trim().split(/\r?\n/)[0];
     if (p) return p;
   } catch { /* not in PATH */ }
   return null;
