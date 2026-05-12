@@ -9,17 +9,28 @@
 2. **新 bot 的版本发布**：飞书的 `/apprelease` URL 会被 SPA 重定向，手动定位"创建版本"按钮繁琐
 3. **bot 权限诊断**：一眼看完所有 bot 的当前权限状况
 
-## 脚本一览
+## 脚本一览(canonical 9 个,不要再加)
 
 | 脚本 | 用途 |
 |------|------|
 | `login.mjs` | 飞书开放平台扫码登录，把浏览器 storageState 存到 `state.json` 供后续脚本复用 |
 | `get-qr.mjs` | 单纯抓登录二维码（不轮询登录状态） |
+| `create-app.mjs` | 自动创建新的飞书 app 应用（填表 + 提交） |
 | `diag-perms.mjs` | **只读**遍历所有 bot 当前权限，输出报告 |
 | `fix-perms.mjs` | 给指定 bot 补齐 7 项标准消息权限（`im:message`, `im:message:readonly`, `im:resource` 等） |
 | `clear-perms.mjs` | 清空指定 bot 的所有权限（每行点"关闭"） |
+| `setup-events.mjs` | 配置事件订阅（长连接 + `im.message.receive_v1`） |
 | `publish.mjs` | 创建 + 发布 bot 应用的最新版本（让权限/事件订阅生效） |
 | `_lib.mjs` | 共享工具，从项目根 `bots.json` 读取 bot App ID 列表，定义状态/截图目录 |
+
+> **⚠️ 这个工具包是"封闭集合"** — 不要再往这个目录加新 `.mjs` 脚本。
+> 凡是 `add-*` / `test-*` / `check-*` / `list-*` / `diag-*`(除了 `diag-perms.mjs`) / `manual-*` 等
+> 一次性诊断或专项脚本,都会被 `.gitignore` 的 allowlist 自动屏蔽,无法 commit。
+>
+> 想加专项能力(如"加文档权限"、"加 task 权限"):**扩展 `fix-perms.mjs` 增加参数**,
+> 而不是新建文件。临时实验脚本一律放 `/tmp/`,不要进这个目录。
+>
+> 想新增 canonical 脚本?必须先更新本表 + 编辑 `.gitignore` allowlist,需经 review。
 
 ## 使用前提
 

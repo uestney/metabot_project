@@ -25,3 +25,21 @@ test-feishu.mjs
 tools/feishu-bot-automation/state.json
 tools/feishu-bot-automation/screenshots/
 tools/feishu-bot-automation/*-results.json
+
+# Playwright 工具包采用 allowlist：只有以下 9 个 canonical 脚本能进 git。
+# 任何其他 .mjs（add-*、check-*、diag-* 之外的、test-*、list-*、manual-*、临时实验）
+# 自动被忽略 —— 防止以后任何 Claude session 或人 重复造一次性辅助脚本。
+# 想加新的 canonical 脚本？必须先在 README 列出 + 编辑下面这个 allowlist。
+tools/feishu-bot-automation/*.mjs
+!tools/feishu-bot-automation/_lib.mjs
+!tools/feishu-bot-automation/login.mjs
+!tools/feishu-bot-automation/get-qr.mjs
+!tools/feishu-bot-automation/create-app.mjs
+!tools/feishu-bot-automation/fix-perms.mjs
+!tools/feishu-bot-automation/publish.mjs
+!tools/feishu-bot-automation/setup-events.mjs
+!tools/feishu-bot-automation/clear-perms.mjs
+!tools/feishu-bot-automation/diag-perms.mjs
+
+# 一次性 skill 实验目录 —— 实际 skill 在 Skill Hub 里,本地不需要副本
+src/skills/skill-anywhere/
