@@ -1,0 +1,11 @@
+{
+  "feishuBots": [
+    {
+      "name": "mybot",
+      "description": "My Bot - Claude Code Agent",
+      "feishuAppId": "cli_xxxxxxxxxxxxxxxx",
+      "feishuAppSecret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "defaultWorkingDirectory": "D:\\metabot_root"
+    }
+  ]
+}
