@@ -16,6 +16,7 @@
  *   - tag: 'code' / 'code_block': 400 error
  *   - tag: 'note': deprecated in v2
  */
+import os from 'node:os';
 import type { CardState, CardStatus, ToolCall } from '../types.js';
 import { parseMarkdownToBlocks, type Block } from './markdown-parser.js';
 
@@ -317,11 +318,16 @@ export function buildCardV2(state: CardState): string {
   // stats footer: body 内全宽灰色面板
   {
     const projectName = state.workingDirectory
-      ? state.workingDirectory.replace(/\/+$/, '').split('/').pop() || ''
+      ? state.workingDirectory.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || ''
       : '';
     const durationStr = state.durationMs !== undefined
-      ? `${(state.durationMs / 1000).toFixed(1)}s`
+      ? `${Math.round(state.durationMs / 1000)}s`
       : '';
+    const hostname = os.hostname();
+
+    // First row: hostname.foldername.duration
+    const firstRowParts = [hostname, projectName, durationStr].filter(Boolean);
+    const firstRow      = firstRowParts.join('·');
 
     const statsItems: string[] = [];
     if (state.totalTokens && state.contextWindow) {
@@ -335,13 +341,13 @@ export function buildCardV2(state: CardState): string {
       if (state.model) statsItems.push(state.model.replace(/^claude-/, ''));
     }
 
-    const hasFirstRow  = projectName || durationStr;
+    const hasFirstRow  = firstRowParts.length > 0;
     const hasSecondRow = statsItems.length > 0;
 
     if (hasFirstRow || hasSecondRow) {
       const footerContent: string[] = [];
       if (hasFirstRow) {
-        footerContent.push([projectName, durationStr].filter(Boolean).join(' · '));
+        footerContent.push(firstRow);
       }
       if (hasSecondRow) {
         footerContent.push(statsItems.join(' | '));

@@ -7,6 +7,7 @@ export type {
   BackgroundEvent,
   BackgroundTaskStatus,
 } from '../types.js';
+import os from 'node:os';
 import type { CardState, CardStatus } from '../types.js';
 
 const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: string }> = {
@@ -182,35 +183,43 @@ export function buildCard(state: CardState): string {
 
   // Stats note — show context usage during all states, full stats on complete/error
   {
-    const parts: string[] = [];
+    const projectName = state.workingDirectory
+      ? state.workingDirectory.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || ''
+      : '';
+    const durationStr = state.durationMs !== undefined
+      ? `${Math.round(state.durationMs / 1000)}s`
+      : '';
+    const hostname = os.hostname();
+
+    // First line: hostname·foldername·duration
+    const headerParts = [hostname, projectName, durationStr].filter(Boolean);
+
+    const statsParts: string[] = [];
     if (state.totalTokens && state.contextWindow) {
       const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
       const tokensK = state.totalTokens >= 1000
         ? `${(state.totalTokens / 1000).toFixed(1)}k`
         : `${state.totalTokens}`;
       const ctxK = `${Math.round(state.contextWindow / 1000)}k`;
-      parts.push(`ctx: ${tokensK}/${ctxK} (${pct}%)`);
+      statsParts.push(`ctx: ${tokensK}/${ctxK} (${pct}%)`);
     }
     if (state.status === 'complete' || state.status === 'error') {
       if (state.sessionCostUsd != null) {
-        parts.push(`$${state.sessionCostUsd.toFixed(2)}`);
+        statsParts.push(`$${state.sessionCostUsd.toFixed(2)}`);
       }
       if (state.model) {
-        // Strip the claude- prefix (claude-opus-4-7 → opus-4-7) but keep the
-        // full Kimi model name since e.g. `for-coding` loses too much context.
-        parts.push(state.model.replace(/^claude-/, ''));
-      }
-      if (state.durationMs !== undefined) {
-        parts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
+        statsParts.push(state.model.replace(/^claude-/, ''));
       }
     }
-    if (parts.length > 0) {
+
+    const allParts = [...headerParts, ...statsParts];
+    if (allParts.length > 0) {
       elements.push({
         tag: 'note',
         elements: [
           {
             tag: 'plain_text',
-            content: parts.join(' | '),
+            content: allParts.join(' | '),
           },
         ],
       });
