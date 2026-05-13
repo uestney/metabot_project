@@ -102,6 +102,14 @@ interface RunningTask {
   /** Accumulated answers keyed by question header (for multi-question calls) */
   collectedAnswers: Record<string, string>;
   cardMessageId: string;
+  /**
+   * Dedicated card for the currently-displayed AskUserQuestion, sent
+   * SEPARATELY from {@link cardMessageId}. On Feishu this is a Schema 1.0
+   * card because v2 mobile drops button blocks; the main streaming card
+   * stays v2 throughout (Feishu refuses to patch v2 → v1). Cleared after
+   * the question is answered.
+   */
+  questionCardMessageId?: string;
   questionTimeoutId?: ReturnType<typeof setTimeout>;
   processor: StreamProcessor;
   rateLimiter: RateLimiter;
@@ -190,6 +198,17 @@ export class MessageBridge {
     teamState: TeamState;
     snippets: string[];
     timer: ReturnType<typeof setTimeout>;
+  }>();
+  /**
+   * In-flight continuation cards — main-line agent bursts triggered by an
+   * SDK `<task-notification>` injection (background bash returns etc.).
+   * Tracked separately from {@link runningTasks} so user messages can
+   * still queue / be processed normally while a continuation is rendering.
+   */
+  private continuationTasks = new Map<string, {
+    abortController: AbortController;
+    cardMessageId: string;
+    turnId: string;
   }>();
   /** Callback for activity lifecycle events (task started/completed/failed). */
   onActivityEvent?: (event: ActivityEventData) => void;
@@ -335,6 +354,21 @@ export class MessageBridge {
     const task = this.runningTasks.get(chatId);
     if (!task) return;
     if (task.questionTimeoutId) clearTimeout(task.questionTimeoutId);
+    // Finalize any in-flight question card so the user doesn't see buttons
+    // that go nowhere after the task is gone.
+    if (task.questionCardMessageId) {
+      const upd = this.sender.updateQuestionCard
+        ? this.sender.updateQuestionCard.bind(this.sender)
+        : this.sender.updateCard.bind(this.sender);
+      void upd(task.questionCardMessageId, {
+        status: 'error',
+        userPrompt: 'Question',
+        responseText: '_Task stopped before answer received_',
+        toolCalls: [],
+        errorMessage: 'Task was stopped',
+      });
+      task.questionCardMessageId = undefined;
+    }
     task.executionHandle.finish();
     task.abortController.abort();
     // Don't delete from runningTasks here — the finally block in executeQuery will
@@ -399,6 +433,14 @@ export class MessageBridge {
           clearTimeout(buf.timer);
           void this.flushSpontaneous(chatId);
         }
+        // Abort any in-flight continuation card — its stream is bound to the
+        // executor we're tearing down and will never deliver another message.
+        // The handleContinuationTurn loop will finalize the card to an error
+        // state via its abort-aware fallback.
+        const cont = this.continuationTasks.get(chatId);
+        if (cont) {
+          cont.abortController.abort();
+        }
       });
       this.logger.info(
         {
@@ -414,9 +456,16 @@ export class MessageBridge {
   }
 
   /**
-   * Attach a 'spontaneous' handler to the chat's persistent executor. Called
-   * when a new executor is added to the pool. Idempotent — guarded by
+   * Attach event handlers to the chat's persistent executor. Called when a
+   * new executor is added to the pool. Idempotent — guarded by
    * spontaneousSubscribed.
+   *
+   * Wires two channels for between-turn agent output:
+   *   - `spontaneous` — teammate / `/goal` / status pings; coalesced into the
+   *     "Agent activity between turns" card every 30 s.
+   *   - `continuation-turn` — SDK-initiated continuation turn (background
+   *     task settled, agent now replying in main-line). Rendered as a fresh
+   *     streaming card just like a user-prompted turn.
    */
   private attachSpontaneousHandler(chatId: string): void {
     if (this.spontaneousSubscribed.has(chatId)) return;
@@ -426,7 +475,12 @@ export class MessageBridge {
     exec.on('spontaneous', (msg) => {
       this.handleSpontaneousMessage(chatId, msg);
     });
-    this.logger.debug({ chatId }, 'MessageBridge: attached spontaneous handler');
+    exec.on('continuation-turn', (handle) => {
+      // Fire-and-forget — handleContinuationTurn manages its own lifecycle
+      // (card + stream loop + finalize). Errors are logged inside.
+      void this.handleContinuationTurn(chatId, handle as ExecutionHandle);
+    });
+    this.logger.debug({ chatId }, 'MessageBridge: attached executor subscriptions');
   }
 
   /**
@@ -502,6 +556,134 @@ export class MessageBridge {
       this.logger.info({ chatId, snippetCount: buf.snippets.length }, 'MessageBridge: sent spontaneous card');
     } catch (err) {
       this.logger.warn({ err, chatId }, 'MessageBridge: failed to send spontaneous card');
+    }
+  }
+
+  /**
+   * Render an SDK-initiated continuation turn as a fresh streaming card —
+   * the same blue → green lifecycle a user-prompted turn produces, NOT the
+   * coalesced "agent activity" card.
+   *
+   * Trigger: a `run_in_background` Bash command (or other deferred tool)
+   * settled, causing the SDK to inject a `<task-notification>` user message;
+   * the persistent executor's consumeLoop classified that burst as
+   * `continuation` and emitted this handle. Semantically the burst is the
+   * main agent continuing its work, so it should look like a normal reply.
+   *
+   * Lifecycle:
+   *   - send initial thinking card
+   *   - stream the handle, updating the card on each delta via RateLimiter
+   *   - finalize via sendFinalCard once a `result` arrives (or the executor
+   *     is torn down — abort flips the card to error)
+   *
+   * Concurrency:
+   *   - tracked in {@link continuationTasks} (NOT {@link runningTasks}), so
+   *     a user message arriving mid-continuation still queues / runs via
+   *     the normal executeQuery path — the two render side-by-side as
+   *     separate cards.
+   *   - at most one continuation card per chatId at a time; if one is
+   *     already in flight, the second arrival is logged and dropped (the
+   *     SDK opens one continuation turn per task-notification burst, so
+   *     overlap is unusual but possible if two background tasks settle
+   *     simultaneously — we accept dropping the second card's chrome since
+   *     the active card's stream still receives that burst's messages).
+   */
+  private async handleContinuationTurn(chatId: string, handle: ExecutionHandle): Promise<void> {
+    if (this.continuationTasks.has(chatId)) {
+      // Rare but possible — log and drain silently so the SDK turn still
+      // terminates. The visible signal is already on the in-flight card.
+      this.logger.warn({ chatId }, 'MessageBridge: continuation turn already in flight — draining new handle');
+      try {
+        for await (const _msg of handle.stream) {
+          // drop
+        }
+      } catch (err) {
+        this.logger.debug({ err, chatId }, 'MessageBridge: drained extra continuation handle');
+      }
+      return;
+    }
+
+    const displayPrompt = '(agent continuation: background task return)';
+    const processor = new StreamProcessor(displayPrompt);
+    const rateLimiter = new RateLimiter(1500);
+    const abortController = new AbortController();
+    const session = this.sessionManager.getSession(chatId);
+    const activeGoal = session.activeGoal;
+
+    const initialState: CardState = {
+      status: 'thinking',
+      userPrompt: displayPrompt,
+      responseText: '',
+      toolCalls: [],
+      goalCondition: activeGoal,
+    };
+
+    const messageId = await this.sender.sendCard(chatId, initialState);
+    if (!messageId) {
+      this.logger.warn({ chatId }, 'MessageBridge: failed to send continuation initial card');
+      // Drain stream so the SDK turn still completes cleanly
+      try { for await (const _msg of handle.stream) { /* drop */ } } catch { /* ignore */ }
+      try { handle.finish(); } catch { /* ignore */ }
+      return;
+    }
+
+    this.continuationTasks.set(chatId, {
+      abortController,
+      cardMessageId: messageId,
+      turnId: (handle as unknown as { turnId?: string }).turnId ?? 'continuation',
+    });
+    this.logger.info({ chatId, messageId }, 'MessageBridge: continuation card opened');
+
+    let lastState: CardState = initialState;
+    const startTime = Date.now();
+    const outputsDir = this.outputsManager.prepareDir(chatId);
+
+    try {
+      for await (const message of handle.stream) {
+        if (abortController.signal.aborted) break;
+        const state = processor.processMessage(message);
+        if (activeGoal) state.goalCondition = activeGoal;
+        lastState = state;
+        if (state.status === 'complete' || state.status === 'error') break;
+        rateLimiter.schedule(() => {
+          if (!abortController.signal.aborted) {
+            this.sender.updateCard(messageId, state);
+          }
+        });
+      }
+      await rateLimiter.cancelAndWait();
+
+      if (lastState.status !== 'complete' && lastState.status !== 'error') {
+        if (abortController.signal.aborted) {
+          lastState = { ...lastState, status: 'error', errorMessage: 'Continuation interrupted (executor released)' };
+        } else if (lastState.responseText) {
+          lastState = { ...lastState, status: 'complete' };
+        } else {
+          lastState = { ...lastState, status: 'error', errorMessage: 'Continuation ended unexpectedly' };
+        }
+      }
+
+      await this.sendFinalCard(messageId, lastState, chatId);
+      const durationMs = Date.now() - startTime;
+      await this.sendCompletionNotice(chatId, lastState, durationMs);
+      // Output files for continuation turns too — agent may have produced
+      // artifacts in the bash background task whose summary triggered this.
+      await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+    } catch (err: any) {
+      this.logger.error({ err, chatId }, 'MessageBridge: continuation stream errored');
+      const errorState: CardState = {
+        ...lastState,
+        status: 'error',
+        errorMessage: err?.message || 'Continuation failed',
+      };
+      try { await rateLimiter.cancelAndWait(); } catch { /* ignore */ }
+      try { await this.sendFinalCard(messageId, errorState, chatId); } catch { /* ignore */ }
+    } finally {
+      try { handle.finish(); } catch { /* ignore */ }
+      if (this.continuationTasks.get(chatId)?.cardMessageId === messageId) {
+        this.continuationTasks.delete(chatId);
+      }
+      try { this.outputsManager.cleanup(outputsDir); } catch { /* ignore */ }
     }
   }
 
@@ -895,6 +1077,29 @@ export class MessageBridge {
       'User answered question',
     );
 
+    // Helper: render the dedicated question card. The question card lives
+    // independent of the main streaming card (Feishu v1 vs v2 schemas can't
+    // patch each other), so all answer-stage rendering goes through this
+    // path, not updateCard. Stays minimal: just header + question + buttons.
+    //
+    // Bind `this.sender` on both the question-card path AND the fallback,
+    // otherwise calling the plucked method later loses its `this` and the
+    // inner `this.sender.sendCard(...)` blows up with "Cannot read
+    // properties of undefined (reading 'sender')".
+    const updateQ = async (qState: CardState): Promise<void> => {
+      if (!task.questionCardMessageId) return;
+      const upd = this.sender.updateQuestionCard
+        ? this.sender.updateQuestionCard.bind(this.sender)
+        : this.sender.updateCard.bind(this.sender);
+      await upd(task.questionCardMessageId, qState);
+    };
+    const sendQ = async (qState: CardState): Promise<string | undefined> => {
+      const fn = this.sender.sendQuestionCard
+        ? this.sender.sendQuestionCard.bind(this.sender)
+        : this.sender.sendCard.bind(this.sender);
+      return fn(chatId, qState);
+    };
+
     // Check if more questions remain in this AskUserQuestion call
     if (task.currentQuestionIndex + 1 < pending.questions.length) {
       task.currentQuestionIndex++;
@@ -906,20 +1111,18 @@ export class MessageBridge {
         this.autoAnswerRemainingQuestions(task);
       }, QUESTION_TIMEOUT_MS);
 
-      // Update card to show next question
-      const currentState = task.processor.getCurrentState();
+      // Update the dedicated question card to the next sub-question
       const nextQ = pending.questions[task.currentQuestionIndex];
       const displayQuestion: PendingQuestion = {
         toolUseId: pending.toolUseId,
         questions: [nextQ],
       };
       const progress = `(${task.currentQuestionIndex + 1}/${pending.questions.length})`;
-      await this.sender.updateCard(task.cardMessageId, {
-        ...currentState,
+      await updateQ({
         status: 'waiting_for_input',
-        responseText: currentState.responseText
-          ? currentState.responseText + `\n\n> **Reply ${progress}:** ${answerText}`
-          : `> **Reply:** ${answerText}`,
+        userPrompt: `Question ${progress}`,
+        responseText: `> **Reply:** ${answerText}`,
+        toolCalls: [],
         pendingQuestion: displayQuestion,
       });
       return;
@@ -940,19 +1143,31 @@ export class MessageBridge {
     task.collectedAnswers = {};
     task.processor.clearPendingQuestion();
 
+    // Finalize the dedicated question card — strip buttons, show what was picked.
+    const answerSummary = Object.values(collectedAnswers).length > 0
+      ? Object.values(collectedAnswers).join(', ')
+      : answerText;
+    await updateQ({
+      status: 'complete',
+      userPrompt: 'Question',
+      responseText: `> **Reply:** ${answerSummary}`,
+      toolCalls: [],
+    });
+    task.questionCardMessageId = undefined;
+
     task.executionHandle.resolveQuestion(pending.toolUseId, collectedAnswers);
 
     this.logger.info({ chatId, answers: collectedAnswers, toolUseId: pending.toolUseId }, 'Resolved AskUserQuestion hook with collected answers');
 
-    // Check if there are more queued AskUserQuestion calls
+    // Check if there are more queued AskUserQuestion calls (back-to-back
+    // AskUserQuestion tool_uses in one assistant turn). Each call gets its
+    // own fresh question card.
     const nextPending = task.processor.getPendingQuestion();
     if (nextPending) {
       task.pendingQuestion = nextPending;
       task.currentQuestionIndex = 0;
       task.collectedAnswers = {};
 
-      // Show next question call
-      const currentState = task.processor.getCurrentState();
       const displayQuestion: PendingQuestion = {
         toolUseId: nextPending.toolUseId,
         questions: [nextPending.questions[0]],
@@ -962,21 +1177,18 @@ export class MessageBridge {
         this.autoAnswerRemainingQuestions(task);
       }, QUESTION_TIMEOUT_MS);
 
-      await this.sender.updateCard(task.cardMessageId, {
-        ...currentState,
+      const newQId = await sendQ({
         status: 'waiting_for_input',
-        responseText: currentState.responseText
-          ? currentState.responseText + `\n\n> **Reply:** ${answerText}\n\n_Next question${progress}..._`
-          : `> **Reply:** ${answerText}\n\n_Next question${progress}..._`,
+        userPrompt: progress ? `Question${progress}` : 'Question',
+        responseText: '',
+        toolCalls: [],
         pendingQuestion: displayQuestion,
       });
+      if (newQId) task.questionCardMessageId = newQId;
       return;
     }
 
-    // No more questions — resume normal execution
-    const answerSummary = Object.values(task.collectedAnswers).length > 0
-      ? Object.values(task.collectedAnswers).join(', ')
-      : answerText;
+    // No more questions — bump the main streaming card so it visibly resumes.
     const currentState = task.processor.getCurrentState();
     await this.sender.updateCard(task.cardMessageId, {
       ...currentState,
@@ -1007,6 +1219,22 @@ export class MessageBridge {
     task.currentQuestionIndex = 0;
     task.collectedAnswers = {};
     task.processor.clearPendingQuestion();
+
+    // Finalize the dedicated question card to "(timed out)" — fire-and-forget,
+    // resolveQuestion below doesn't depend on this completing.
+    if (task.questionCardMessageId) {
+      const upd = this.sender.updateQuestionCard
+        ? this.sender.updateQuestionCard.bind(this.sender)
+        : this.sender.updateCard.bind(this.sender);
+      void upd(task.questionCardMessageId, {
+        status: 'error',
+        userPrompt: 'Question',
+        responseText: '_用户未及时回复，已自动跳过_',
+        toolCalls: [],
+        errorMessage: 'Timed out waiting for answer',
+      });
+      task.questionCardMessageId = undefined;
+    }
 
     task.executionHandle.resolveQuestion(pending.toolUseId, collectedAnswers);
   }
@@ -1274,17 +1502,23 @@ export class MessageBridge {
 
         // Check if we hit a waiting_for_input state
         if (state.status === 'waiting_for_input' && state.pendingQuestion) {
-          // Only initialize tracking when we see a NEW question call
-          if (!runningTask.pendingQuestion || runningTask.pendingQuestion.toolUseId !== state.pendingQuestion.toolUseId) {
+          // Only initialize tracking when we see a NEW question call (different toolUseId).
+          // Multi-question calls (same toolUseId, advance currentQuestionIndex) reuse the
+          // already-sent question card via updateQuestionCard below.
+          const isNewQuestionCall =
+            !runningTask.pendingQuestion ||
+            runningTask.pendingQuestion.toolUseId !== state.pendingQuestion.toolUseId;
+          if (isNewQuestionCall) {
             runningTask.pendingQuestion = state.pendingQuestion;
             runningTask.currentQuestionIndex = 0;
             runningTask.collectedAnswers = {};
+            runningTask.questionCardMessageId = undefined; // a fresh question card will be sent
           }
 
           await rateLimiter.flush();
 
-          // Show only the current question (not all at once)
-          const pending = runningTask.pendingQuestion;
+          // Non-null after the isNewQuestionCall branch assigned it (or it was already set)
+          const pending = runningTask.pendingQuestion!;
           const currentQ = pending.questions[runningTask.currentQuestionIndex];
           const displayQuestion: PendingQuestion = {
             toolUseId: pending.toolUseId,
@@ -1293,14 +1527,59 @@ export class MessageBridge {
           const progress = pending.questions.length > 1
             ? ` (${runningTask.currentQuestionIndex + 1}/${pending.questions.length})`
             : '';
+
+          // 1) Update the MAIN streaming card without the pendingQuestion field,
+          //    so it stays clean v2 (Feishu refuses to patch v2 ↔ v1, and v2
+          //    mobile silently drops the button block anyway). Show only a
+          //    pointer note in the response so the user knows where to look.
+          const mainCardHint = progress
+            ? `_Waiting for your answer to the question card${progress} below…_`
+            : '_Waiting for your answer to the question card below…_';
           await this.sender.updateCard(messageId, {
             ...state,
-            pendingQuestion: displayQuestion,
-            // Append progress indicator to response if multi-question
-            responseText: progress
-              ? (state.responseText || '') + (state.responseText ? '\n\n' : '') + `_Question${progress}_`
-              : state.responseText,
+            pendingQuestion: undefined,
+            responseText: state.responseText
+              ? state.responseText + '\n\n' + mainCardHint
+              : mainCardHint,
           });
+
+          // 2) Send / update a DEDICATED question card (v1 on Feishu) — this is
+          //    where the option buttons live. See memory:
+          //    bug-feishu-v2-mobile-action-buttons.
+          const questionCardState: CardState = {
+            status: 'waiting_for_input',
+            userPrompt: progress ? `Question${progress}` : 'Question',
+            responseText: '',
+            toolCalls: [],
+            pendingQuestion: displayQuestion,
+          };
+          if (runningTask.questionCardMessageId && this.sender.updateQuestionCard) {
+            await this.sender.updateQuestionCard(runningTask.questionCardMessageId, questionCardState);
+          } else {
+            // Bind explicitly — `this.sender.sendQuestionCard ?? ...bind(...)`
+            // would pluck the method off without `this`, and calling it
+            // later throws "Cannot read properties of undefined (reading
+            // 'sender')" inside the Feishu adapter.
+            const sendQ = this.sender.sendQuestionCard
+              ? this.sender.sendQuestionCard.bind(this.sender)
+              : this.sender.sendCard.bind(this.sender);
+            const qMsgId = await sendQ(chatId, questionCardState);
+            if (qMsgId) {
+              runningTask.questionCardMessageId = qMsgId;
+            } else {
+              // Sender refused. Fall back to the legacy in-card render so the
+              // user still sees the question (even if mobile renders without
+              // buttons — text fallback "type the number" still works).
+              this.logger.warn({ chatId }, 'sendQuestionCard returned no messageId; falling back to inline render');
+              await this.sender.updateCard(messageId, {
+                ...state,
+                pendingQuestion: displayQuestion,
+                responseText: progress
+                  ? (state.responseText || '') + (state.responseText ? '\n\n' : '') + `_Question${progress}_`
+                  : state.responseText,
+              });
+            }
+          }
 
           // Set/reset timeout for auto-answer
           if (runningTask.questionTimeoutId) {
@@ -2078,6 +2357,13 @@ export class MessageBridge {
       this.logger.info({ chatId }, 'Aborted running task during shutdown');
     }
     this.runningTasks.clear();
+    // Abort any in-flight continuation cards too — their executors are
+    // about to be torn down by shutdownAll below.
+    for (const [chatId, cont] of this.continuationTasks) {
+      cont.abortController.abort();
+      this.logger.info({ chatId }, 'Aborted continuation task during shutdown');
+    }
+    this.continuationTasks.clear();
     this.sessionManager.destroy();
     // Tear down persistent executors (Stage 2). Fire-and-forget so destroy()
     // stays sync — registry.shutdownAll waits for clean SDK process exit
