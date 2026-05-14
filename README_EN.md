@@ -34,7 +34,17 @@
 
 > **Claude Code**, **Kimi Code**, and **Codex CLI** — three first-class engines. Subscription or API key, your choice. Each bot picks its own engine.
 
-![MetaBot Demo](resources/metabot-demo.gif)
+<div align="center">
+<table>
+<tr>
+  <td width="25%"><img src="resources/demo-1.png" alt="Spawn an agent team" /></td>
+  <td width="25%"><img src="resources/demo-2.png" alt="Dispatch a task" /></td>
+  <td width="25%"><img src="resources/demo-3.png" alt="Agents working between turns" /></td>
+  <td width="25%"><img src="resources/demo-4.png" alt="PR merged" /></td>
+</tr>
+</table>
+<sub>Feishu mobile · Spawn a team · Dispatch a task · Watch progress · PR merged</sub>
+</div>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
@@ -171,6 +181,8 @@ Full-featured browser-based chat interface. Access at `https://your-server/web/`
 | Component | Description |
 |-----------|-------------|
 | **Triple Engine Kernel** | Each bot independently chooses Claude Code / Kimi Code / Codex CLI — full tool stack (Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP) in autonomous mode |
+| **Persistent Sessions & Goal Loops** | One Claude process per chat — `/goal` keeps the agent auto-driving across turns until a condition is met; teammates and background tasks survive between turns |
+| **Agent Teams** | A lead agent spawns specialist teammates in parallel, routes tasks between them, and aggregates results — all in one Feishu chat |
 | **CC-Native Scheduling** | Use Claude Code's built-in `CronCreate` and `/loop` directly — zero MetaBot setup, runs in-session |
 | **MetaMemory** | Embedded SQLite knowledge store with full-text search, Web UI, auto-syncs to Feishu Wiki |
 | **IM Bridge** | Chat with any agent from Feishu, Telegram, or WeChat (including mobile). Streaming cards + tool call tracking |
@@ -239,6 +251,21 @@ summarize the top 5 stories, and save the summary to MetaMemory.
 > (`cp src/skills/metaschedule/SKILL.md ~/.claude/skills/metaschedule/`),
 > then use `mb schedule cron` / the HTTP API to submit jobs to MetaBot's
 > persistent scheduler.
+
+### Agent Teams — Runtime
+
+```
+Act as a lead engineer. Spawn a frontend specialist and a backend specialist
+in parallel: the frontend handles the React UI changes, the backend adds the
+new /api/reports endpoint, and you review both PRs before merging.
+```
+
+### Goal Loops
+
+```
+/goal The CI for PR #123 is green and the deploy completes successfully.
+Check every 10 minutes and report back when done.
+```
 
 ### MetaSkill — Agent Factory (opt-in)
 
@@ -409,6 +436,7 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `/reset` | Clear session |
 | `/stop` | Abort current task |
 | `/status` | Session info (includes current model) |
+| `/goal <condition>` | Set a goal the agent keeps pursuing across turns. `/goal clear` to stop |
 | `/model` | Show current engine/model; `/model list` — available engines/models; `/model claude`, `/model kimi`, or `/model codex` — switch engine; `/model <name>` — set model; `/model reset` — restore default |
 | `/memory list` | Browse knowledge tree |
 | `/memory search <query>` | Search knowledge base |
