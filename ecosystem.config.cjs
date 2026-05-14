@@ -32,12 +32,42 @@ try {
   process.exit(1);
 }
 
-// ── 端口基准（可通过 .env 覆盖） ────────────────────────────────────────────
+// ── 解析 .env ───────────────────────────────────────────────────────────────
+// PM2 daemon 抓的 env 是它启动那一刻的快照,后续改 .env 不会反映给已 spawn 的子进程,
+// 而 dotenv 在 bot 进程里默认不会覆盖已有的 process.env。这两条叠起来,会让没有
+// per-bot `env` 块的 bot 长期沿用一份过期的 ANTHROPIC_* / METABOT_* 凭据。
+// 这里手工把 .env 解析一遍,然后在 makeApp() 里 inject 进每个 app 的 env block —
+// PM2 启动子进程时把 .env 的最新值显式写进去,顶掉 daemon-level 的缓存。
+// 这些 key 是 PM2 ecosystem **按 bot index 独立计算**的,不能让 .env 覆盖,
+// 否则所有 bot 都拿到同一份固定值 → 端口冲突 / 共享 db / BOTS_CONFIG 错位等灾难。
+const DOTENV_DENYLIST = new Set([
+  'API_PORT', 'MEMORY_PORT', 'META_MEMORY_URL',
+  'BOTS_CONFIG', 'BOT_NAME', 'API_PORT_BASE',
+  'METABOT_DATA_DIR', 'MEMORY_DATABASE_DIR',
+  'CLAUDE_DEFAULT_WORKING_DIRECTORY',
+]);
+
+const dotenvVars = {};
 let apiPortBase = 10001;
 try {
   const envFile = fs.readFileSync(path.join(ROOT, '.env'), 'utf-8');
-  const match   = envFile.match(/^API_PORT_BASE\s*=\s*(\d+)/m);
-  if (match) apiPortBase = parseInt(match[1], 10);
+  for (const line of envFile.split('\n')) {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!m) continue;
+    const key = m[1];
+    let val   = m[2];
+    // strip optional matching quotes
+    if ((val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    // 单独处理 API_PORT_BASE(本文件自己用),其它进 dotenvVars(但排除冲突 key)
+    if (key === 'API_PORT_BASE') {
+      apiPortBase = parseInt(val, 10);
+    } else if (!DOTENV_DENYLIST.has(key)) {
+      dotenvVars[key] = val;
+    }
+  }
 } catch { /* .env 不存在也没关系 */ }
 
 // ── 生成 PM2 app 配置 ───────────────────────────────────────────────────────
@@ -91,6 +121,9 @@ function makeApp(bot, index) {
       META_MEMORY_URL:     `http://localhost:${memoryPort}`,
       CLAUDE_MAX_TURNS:    '',
       CARD_SCHEMA_V2:      'true',
+      // .env 显式注入(铁锤一击 — 顶掉 PM2 daemon 的旧缓存)。
+      // per-bot bots.json `env` 块仍可覆盖这里(spread 顺序)。
+      ...dotenvVars,
       ...customEnv,
       ...autoFlags,
     },
