@@ -1,6 +1,18 @@
 // Shared types used across IM platforms (Feishu, Telegram, etc.)
 
-export type CardStatus = 'thinking' | 'running' | 'complete' | 'error' | 'waiting_for_input';
+export type CardStatus =
+  | 'thinking'
+  | 'running'
+  | 'complete'
+  | 'error'
+  | 'waiting_for_input'
+  /**
+   * Card was emitted by `flushSpontaneous` at the end of a between-turn
+   * burst (background task return / teammate ping / `/goal` evaluator).
+   * Rendered in blue with an "Agent activity" title so users can tell
+   * it apart from a normal user-prompted turn without reading body text.
+   */
+  | 'agent_activity';
 
 export interface ToolCall {
   name: string;
@@ -30,6 +42,33 @@ export interface BackgroundEvent {
   lastEvent?: string;
 }
 
+/**
+ * Snapshot of an Agent Teams session, derived from Claude Code's
+ * TaskCreated / TaskCompleted / TeammateIdle hooks. Rendered in the
+ * Feishu card and Web UI as a "team panel" so the user can see
+ * teammates and the shared task list at a glance.
+ */
+export interface TeamMember {
+  name: string;
+  status: 'working' | 'idle';
+  /** Most recent task subject this teammate touched (best-effort). */
+  lastSubject?: string;
+}
+
+export interface TeamTask {
+  taskId: string;
+  subject: string;
+  status: 'in_progress' | 'completed';
+  teammate?: string;
+}
+
+export interface TeamState {
+  /** Team name as reported by the SDK hooks (first non-empty wins). */
+  name?: string;
+  teammates: TeamMember[];
+  tasks: TeamTask[];
+}
+
 export interface CardState {
   status: CardStatus;
   userPrompt: string;
@@ -51,6 +90,10 @@ export interface CardState {
   backgroundEvents?: BackgroundEvent[];
   /** Working directory basename for display in card footer */
   workingDirectory?: string;
+  /** Active /goal condition for this session, if any. Mirrored locally so the card can show "🎯 Goal" badge across turns. */
+  goalCondition?: string;
+  /** Snapshot of the active Agent Team (teammates + tasks), if any. */
+  teamState?: TeamState;
 }
 
 export interface IncomingMessage {
