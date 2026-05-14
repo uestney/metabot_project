@@ -74,13 +74,19 @@ async function publishOne(page, name, appId) {
     }
   }
 
+  // Branch: fresh app (no version yet) vs. existing-draft (version saved but not published)
+  let draftAlreadyExists = false;
   if (!createBtn) {
-    // Fallback: try 查看版本详情 (means version already exists, just needs publish)
+    // Fallback: 查看版本详情 means a draft version exists and just needs publishing.
+    // (Previous publish run may have saved the version form without confirming the
+    // publish step — common when only "保存" was available in the form, not
+    // "保存并发布". The page now exposes the publish action on the detail page.)
     const viewVer = page.locator('text=查看版本详情').first();
     if (await viewVer.isVisible({ timeout: 3000 }).catch(() => false)) {
-      log('  no 创建版本 but found 查看版本详情 - clicking it');
+      log('  no 创建版本 but found 查看版本详情 - clicking it (existing draft path)');
       await viewVer.click();
       await sleep(8000);
+      draftAlreadyExists = true;
       await ss(page, `${name}-B-viewversion`);
       await logState(page, 'B-after-view');
     } else {
@@ -95,6 +101,78 @@ async function publishOne(page, name, appId) {
     await sleep(8000);
     await ss(page, `${name}-C-after-create-click`);
     await logState(page, 'C');
+  }
+
+  // If we entered via the existing-draft path, jump straight to the
+  // confirm-publish action on the detail page — there's no form to fill.
+  if (draftAlreadyExists) {
+    log('[D-skip] existing draft; looking for publish/confirm button on detail page');
+    const detailPublishSelectors = [
+      'button:has-text("确认发布")',
+      'button:has-text("申请发布")',
+      'button:has-text("提交发布")',
+      'button:has-text("发布上线")',
+      'button:has-text("立即发布")',
+      'button:has-text("保存并发布")',
+      'button:has-text("提交审核")',
+      'button:has-text("发布")',
+    ];
+    let detailClicked = null;
+    for (const sel of detailPublishSelectors) {
+      const btn = page.locator(sel).first();
+      if (await btn.isVisible({ timeout: 1500 }).catch(() => false) &&
+          await btn.isEnabled({ timeout: 1000 }).catch(() => false)) {
+        log(`  clicking detail-page publish: ${sel}`);
+        await btn.click();
+        detailClicked = sel;
+        await sleep(5000);
+        break;
+      }
+    }
+    await ss(page, `${name}-D-detail-clicked`);
+    if (!detailClicked) {
+      log('  WARNING: detail page has no actionable publish button');
+      return { name, status: 'detail_no_publish_button', url: page.url() };
+    }
+
+    // Handle confirmation dialog if any
+    for (let i = 0; i < 3; i++) {
+      const dlg = page.locator('[role="dialog"] button:has-text("确认发布"), [role="dialog"] button:has-text("确认"), [role="dialog"] button:has-text("确定"), [role="dialog"] button:has-text("发布")').last();
+      if (await dlg.isVisible({ timeout: 2500 }).catch(() => false)) {
+        const txt = await dlg.innerText().catch(() => '?');
+        log(`  dialog button: "${txt}"`);
+        await dlg.click();
+        await sleep(5000);
+      } else {
+        break;
+      }
+    }
+    await ss(page, `${name}-D-detail-after-confirm`);
+    await logState(page, 'D-detail');
+
+    // Skip the form-fill (D) and form-submit (E) sections — we're done.
+    // Go straight to verification.
+    log('[G] verify - check 已发布 status on version page');
+    await page.goto(`https://open.feishu.cn/app/${appId}`, { waitUntil: 'networkidle', timeout: 60000 });
+    await sleep(6000);
+    const sidebarVerLink = page.locator('a:has-text("版本管理与发布"), :text("版本管理与发布")').first();
+    if (await sidebarVerLink.isVisible({ timeout: 4000 }).catch(() => false)) {
+      await sidebarVerLink.click();
+      await sleep(5000);
+    }
+    await ss(page, `${name}-G-final`);
+    const finalText = await page.locator('body').innerText();
+    const published = /已发布|已启用|已上线/.test(finalText);
+    log(`  detail-path verify: published=${published}`);
+
+    const state = await page.context().storageState();
+    writeFileSync(STATE_FILE, JSON.stringify(state));
+    return {
+      name,
+      status: published ? 'published' : 'submitted_but_unverified',
+      submittedVia: detailClicked,
+      path: 'existing-draft',
+    };
   }
 
   // Step D: 我们应该在版本管理页或者一个表单里。看是否需要填写版本号/描述
