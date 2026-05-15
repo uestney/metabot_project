@@ -254,8 +254,8 @@ describe('buildCardV2', () => {
     const footer = elements.find((e) => e.tag === 'column_set');
     expect(footer).toBeDefined();
     const inner = JSON.stringify(footer);
-    expect(inner).toContain('5.0s');
-    expect(inner).toContain('$0.03');
+    expect(inner).toContain('5s');
+    // Cost intentionally disabled in v2 footer (commit 6c2ca929)
     expect(inner).toContain('opus-4-7');                 // claude- prefix stripped
     expect(inner).toContain('ctx:');
   });

@@ -70,7 +70,7 @@ describe('buildCard', () => {
     expect(json.header.template).toBe('green');
     const note = json.elements.find((e: any) => e.tag === 'note');
     expect(note).toBeDefined();
-    expect(note.elements[0].content).toContain('5.0s');
+    expect(note.elements[0].content).toContain('5s');
   });
 
   // Cards from flushSpontaneous (between-turn agent activity) are sent with
