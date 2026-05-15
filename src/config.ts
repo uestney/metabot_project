@@ -2,6 +2,7 @@ import 'dotenv/config';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { loadInstanceIdentity, type InstanceIdentity } from './cluster/identity.js';
 
 /** Agent engine backing a bot. */
 export type EngineName = 'claude' | 'kimi' | 'codex';
@@ -110,6 +111,7 @@ export interface PeerConfig {
 }
 
 export interface AppConfig {
+  instance: InstanceIdentity;
   feishuBots: BotConfig[];
   telegramBots: TelegramBotConfig[];
   webBots: BotConfigBase[];
@@ -134,6 +136,8 @@ export interface AppConfig {
     secret: string;
     adminToken?: string;
     readerToken?: string;
+    instanceToken?: string;
+    namespace: string;
   };
   /** Peer MetaBot instances for cross-instance bot discovery and task delegation. */
   peers: PeerConfig[];
@@ -559,6 +563,12 @@ export function loadAppConfig(): AppConfig {
   const memorySecret = process.env.MEMORY_SECRET || process.env.API_SECRET || '';
   const memoryAdminToken = process.env.MEMORY_ADMIN_TOKEN || undefined;
   const memoryReaderToken = process.env.MEMORY_TOKEN || undefined;
+  const instance = loadInstanceIdentity();
+  const memoryInstanceToken = process.env.MEMORY_INSTANCE_TOKEN || process.env.METABOT_MEMORY_TOKEN || undefined;
+
+  process.env.METABOT_INSTANCE_ID = instance.instanceId;
+  process.env.METABOT_INSTANCE_NAME = instance.instanceName;
+  process.env.METABOT_MEMORY_NAMESPACE = instance.memoryNamespace;
 
   // Parse peers from JSON config and/or env vars
   const peers: PeerConfig[] = [];
@@ -582,8 +592,20 @@ export function loadAppConfig(): AppConfig {
       }
     }
   }
+  if (instance.clusterUrl && instance.discoveryMode !== 'off') {
+    const url = instance.clusterUrl.replace(/\/+$/, '');
+    if (!peers.some((p) => p.url === url)) {
+      const name = instance.clusterId || url.replace(/^https?:\/\//, '').replace(/[:.]/g, '-');
+      peers.push({
+        name,
+        url,
+        secret: process.env.METABOT_CLUSTER_SECRET || undefined,
+      });
+    }
+  }
 
   return {
+    instance,
     feishuBots,
     telegramBots,
     webBots,
@@ -604,6 +626,8 @@ export function loadAppConfig(): AppConfig {
       secret: memorySecret,
       adminToken: memoryAdminToken,
       readerToken: memoryReaderToken,
+      instanceToken: memoryInstanceToken,
+      namespace: instance.memoryNamespace,
     },
     peers,
   };

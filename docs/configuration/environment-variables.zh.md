@@ -13,6 +13,20 @@
 | `API_SECRET` | — | Bearer Token 认证 |
 | `LOG_LEVEL` | `info` | 日志级别（debug, info, warn, error） |
 
+## 实例身份与集群
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `METABOT_HOME` | `~/.metabot` | MetaBot 本地状态目录 |
+| `METABOT_IDENTITY_PATH` | `~/.metabot/identity.json` | 持久化实例身份文件 |
+| `METABOT_INSTANCE_ID` | 自动生成 | 用于联邦和 memory namespace 的稳定实例 ID |
+| `METABOT_INSTANCE_NAME` | `user@hostname` | 便于识别的实例名称 |
+| `METABOT_CLUSTER_ID` | — | 可选的集群/团队标识 |
+| `METABOT_CLUSTER_URL` | — | 可选的集群注册/引导 URL；当前 bootstrap 阶段会自动作为 peer 加入 |
+| `METABOT_CLUSTER_SECRET` | — | `METABOT_CLUSTER_URL` 可选 Bearer Token |
+| `METABOT_DISCOVERY_MODE` | `auto` | 发现模式：`auto`、`static`、`standalone` 或 `off` |
+| `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | 当前实例默认的 MetaMemory namespace |
+
 ## Claude Code
 
 | 变量 | 默认 | 说明 |
@@ -32,7 +46,9 @@
 | `MEMORY_SECRET` | `API_SECRET` | MetaMemory 认证（旧版） |
 | `MEMORY_ADMIN_TOKEN` | — | 管理员 Token（完整访问） |
 | `MEMORY_TOKEN` | — | 读者 Token（仅 shared 文件夹） |
+| `MEMORY_INSTANCE_TOKEN` | — | 实例级 scoped token；可写 `METABOT_MEMORY_NAMESPACE`，可读 shared 内容 |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory 地址（CLI 远程访问） |
+| `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | Agent 默认写入的 namespace；namespace ACL 会分阶段落地 |
 
 ## 飞书服务应用
 

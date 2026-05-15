@@ -109,6 +109,9 @@ async function main() {
   if (appConfig.memory.secret && !process.env.MEMORY_SECRET) {
     process.env.MEMORY_SECRET = appConfig.memory.secret;
   }
+  if (appConfig.memory.instanceToken && !process.env.MEMORY_INSTANCE_TOKEN) {
+    process.env.MEMORY_INSTANCE_TOKEN = appConfig.memory.instanceToken;
+  }
 
   const feishuCount = appConfig.feishuBots.length;
   const telegramCount = appConfig.telegramBots.length;
@@ -217,6 +220,9 @@ async function main() {
       secret: appConfig.memory.secret || undefined,
       adminToken: appConfig.memory.adminToken,
       readerToken: appConfig.memory.readerToken,
+      instanceToken: appConfig.memory.instanceToken,
+      instanceId: appConfig.instance.instanceId,
+      memoryNamespace: appConfig.memory.namespace,
       logger,
     });
   }
@@ -288,6 +294,7 @@ async function main() {
     peerManager,
     memoryServerUrl: appConfig.memoryServerUrl,
     memoryAuthToken: appConfig.memory.adminToken || appConfig.memory.readerToken || appConfig.memory.secret || undefined,
+    instance: appConfig.instance,
     sessionRegistry,
   });
 
