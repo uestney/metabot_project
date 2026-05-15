@@ -16,6 +16,7 @@
  *   - tag: 'code' / 'code_block': 400 error
  *   - tag: 'note': deprecated in v2
  */
+import os from 'node:os';
 import type { CardState, CardStatus } from '../types.js';
 import { parseMarkdownToBlocks, type Block } from './markdown-parser.js';
 
@@ -259,7 +260,16 @@ export function buildCardV2(state: CardState): string {
 
   // Stats footer — grey background panel
   {
-    const parts: string[] = [];
+    const projectName = state.workingDirectory
+      ? state.workingDirectory.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || ''
+      : '';
+    const durationStr = state.durationMs !== undefined
+      ? `${Math.round(state.durationMs / 1000)}s`
+      : '';
+    const hostname = os.hostname();
+    const headerParts = [hostname, projectName, durationStr].filter(Boolean);
+
+    const parts: string[] = [...headerParts];
     if (state.totalTokens && state.contextWindow) {
       const pct    = Math.round((state.totalTokens / state.contextWindow) * 100);
       const tokensK = state.totalTokens >= 1000
@@ -271,7 +281,6 @@ export function buildCardV2(state: CardState): string {
     if (state.status === 'complete' || state.status === 'error') {
       if (state.sessionCostUsd != null) parts.push(`$${state.sessionCostUsd.toFixed(2)}`);
       if (state.model) parts.push(state.model.replace(/^claude-/, ''));
-      if (state.durationMs !== undefined) parts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
     }
     if (parts.length > 0) {
       elements.push({

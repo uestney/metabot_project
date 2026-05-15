@@ -90,6 +90,8 @@ export interface CardState {
   goalCondition?: string;
   /** Snapshot of the active Agent Team (teammates + tasks), if any. */
   teamState?: TeamState;
+  /** Working directory for this session — shown in card footer alongside hostname. */
+  workingDirectory?: string;
 }
 
 export interface IncomingMessage {

@@ -7,6 +7,7 @@ export type {
   BackgroundEvent,
   BackgroundTaskStatus,
 } from '../types.js';
+import os from 'node:os';
 import type { CardState, CardStatus } from '../types.js';
 
 const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: string }> = {
@@ -180,9 +181,18 @@ export function buildCard(state: CardState): string {
     });
   }
 
-  // Stats note — show context usage during all states, full stats on complete/error
+  // Stats note — show hostname·folder·duration always; full stats on complete/error
   {
-    const parts: string[] = [];
+    const projectName = state.workingDirectory
+      ? state.workingDirectory.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || ''
+      : '';
+    const durationStr = state.durationMs !== undefined
+      ? `${Math.round(state.durationMs / 1000)}s`
+      : '';
+    const hostname = os.hostname();
+    const headerParts = [hostname, projectName, durationStr].filter(Boolean);
+
+    const parts: string[] = [...headerParts];
     if (state.totalTokens && state.contextWindow) {
       const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
       const tokensK = state.totalTokens >= 1000
@@ -199,9 +209,6 @@ export function buildCard(state: CardState): string {
         // Strip the claude- prefix (claude-opus-4-7 → opus-4-7) but keep the
         // full Kimi model name since e.g. `for-coding` loses too much context.
         parts.push(state.model.replace(/^claude-/, ''));
-      }
-      if (state.durationMs !== undefined) {
-        parts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
       }
     }
     if (parts.length > 0) {
