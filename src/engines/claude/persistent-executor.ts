@@ -376,6 +376,9 @@ export class PersistentClaudeExecutor extends EventEmitter {
       appendSections.push(
         `## MetaBot API\nYou are running as bot "${ctx.botName}" in chat "${ctx.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
       );
+      appendSections.push(
+        `## Skill Hub\nShared skills live in MetaBot's Skill Hub. Run \`mb skills\` to list/search/install (e.g. \`mb skills install <name> ${ctx.botName}\`).`,
+      );
       if (ctx.groupMembers && ctx.groupMembers.length > 0) {
         const others = ctx.groupMembers.filter((m) => m !== ctx.botName);
         if (ctx.groupId) {

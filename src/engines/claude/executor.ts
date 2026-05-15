@@ -341,6 +341,10 @@ export class ClaudeExecutor {
         `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`
       );
 
+      appendSections.push(
+        `## Skill Hub\nShared skills live in MetaBot's Skill Hub. Run \`mb skills\` to list/search/install (e.g. \`mb skills install <name> ${apiContext.botName}\`).`
+      );
+
       // Agent Teams namespace guidance: the team config lives at
       // ~/.claude/teams/{name}/, which is shared across all bots and chats
       // on the same host. Tell the lead to namespace team names so concurrent
